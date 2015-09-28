@@ -2,7 +2,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.69])
-AC_INIT([webpa-generic], [1.0], [saravanan_sachithanantham2@cable.comcast.com])
+AC_INIT([webpavideo], [1.0], [saravanan_sachithanantham2@cable.comcast.com])
 #AC_CONFIG_SRCDIR([webpa])
 AC_CONFIG_MACRO_DIR([cfg])
 AC_CONFIG_AUX_DIR([cfg])
@@ -33,13 +33,15 @@ AC_CHECK_HEADERS([stdlib.h unistd.h])
 
 #PKG_CHECK_MODULES([DBUS], [dbus-1])
 
+SUBDIRS="src"
+
 # Checks for typedefs, structures, and compiler characteristics.
 AC_TYPE_PID_T
 AC_TYPE_SIZE_T
 
 # Checks for library functions.
 
+#AC_CONFIG_FILES([Makefile])
 AC_CONFIG_FILES([Makefile])
-AC_CONFIG_FILES([src/Makefile])
 
 AC_OUTPUT
