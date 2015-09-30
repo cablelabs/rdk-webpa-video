@@ -1,19 +1,22 @@
 #include "wal.h"
+#include "waldb/waldb.h"
 #include "libIBus.h"
 #include "libIARM.h"
 typedef unsigned int bool;
 #include "hostIf_tr69ReqHandler.h"
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
-
-static int get_ParamValues_tr69hostIf(HOSTIF_MsgData_t param);
+#define MAX_NUM_PARAMETERS 2048
+static int get_ParamValues_tr69hostIf(HOSTIF_MsgData_t *param);
 static int GetParamInfo(const char *pParameterName, ParamVal ***parametervalArr,int *TotalParams);
 static int set_ParamValues_tr69hostIf (HOSTIF_MsgData_t param);
 static int SetParamInfo(ParamVal paramVal);
 static int getParamAttributes(const char *pParameterName, AttrVal ***attr, int *TotalParams);
 static int setParamAttributes(const char *pParameterName, const AttrVal *attArr);
 
+static int dbhandle = 0;
 
 /**
  * @brief getValues interface returns the parameter values.
@@ -36,7 +39,7 @@ void getValues(const char *paramName[], const unsigned int paramCount, ParamVal 
 	for (cnt = 0; cnt < paramCount; cnt++) {
 		retStatus[cnt] = GetParamInfo(paramName[cnt], &paramValArr[cnt],&numParams);
 		retValCount[cnt]=numParams;
-		printf("Parameter Name: %s, Parameter Value return: %d\n",paramName[cnt],retStatus[cnt]);
+		printf("Parameter Name: %s, Parameter Value: %s return: %d\n",paramName[cnt],(paramValArr[cnt][0])->value,retStatus[cnt]);
 	}
 }
 
@@ -50,6 +53,7 @@ void getValues(const char *paramName[], const unsigned int paramCount, ParamVal 
 WAL_STATUS msgBusInit(const char *name)
 {
 	IARM_Result_t ret = IARM_RESULT_IPCCORE_FAIL;
+	DB_STATUS dbRet = DB_FAILURE;
 	ret = IARM_Bus_Init(name);
 	if(ret != IARM_RESULT_SUCCESS)
 	{
@@ -64,6 +68,14 @@ WAL_STATUS msgBusInit(const char *name)
 		return WAL_FAILURE;
 	}
 
+	// Load Document model
+	dbRet = loaddb("/etc/data-model.xml",(void *)&dbhandle);
+
+	if(dbRet != DB_SUCCESS)
+	{
+		printf("Error loading database\n");
+		return WAL_FAILURE;
+	}
 }
 
 /**
@@ -80,14 +92,14 @@ WAL_STATUS RegisterNotifyCB(notifyCB cb)
 /**
  * generic Api for get HostIf parameters through IARM_TR69Bus
 **/
-static int get_ParamValues_tr69hostIf(HOSTIF_MsgData_t param)
+static int get_ParamValues_tr69hostIf(HOSTIF_MsgData_t *ptrParam)
 {
 	IARM_Result_t ret = IARM_RESULT_IPCCORE_FAIL;
 	printf("[%s:%d] Enter\n", __FUNCTION__, __LINE__ );
 
-	param.reqType = HOSTIF_GET;
+	ptrParam->reqType = HOSTIF_GET;
 
-	ret = IARM_Bus_Call(IARM_BUS_TR69HOSTIFMGR_NAME, IARM_BUS_TR69HOSTIFMGR_API_GetParams, (void *)&param, sizeof(HOSTIF_MsgData_t));
+	ret = IARM_Bus_Call(IARM_BUS_TR69HOSTIFMGR_NAME, IARM_BUS_TR69HOSTIFMGR_API_GetParams, (void *)ptrParam, sizeof(HOSTIF_MsgData_t));
 
 
 	if(ret != IARM_RESULT_SUCCESS) {
@@ -96,7 +108,7 @@ static int get_ParamValues_tr69hostIf(HOSTIF_MsgData_t param)
 	}
 	else
 	{
-		printf("[%s:%s:%d] The value of param: %s paramLen : %d\n", __FILE__, __FUNCTION__, __LINE__, param.paramName, param.paramLen);
+		printf("[%s:%s:%d] The value for param: %s is %s paramLen : %d\n", __FILE__, __FUNCTION__, __LINE__, ptrParam->paramName,ptrParam->paramValue, ptrParam->paramLen);
 	}
 
 	return WAL_SUCCESS;
@@ -105,29 +117,79 @@ static int get_ParamValues_tr69hostIf(HOSTIF_MsgData_t param)
 
 static int GetParamInfo(const char *pParameterName, ParamVal ***parametervalArr,int *TotalParams)
 {
-	//TODO:: Check if pParameterName is in the tree and convert to a list if a wildcard/branch
+	//Check if pParameterName is in the tree and convert to a list if a wildcard/branch
+	const char wcard = '*'; // TODO: Currently support only wildcard character *
+	int i = 0;
 	int ret = WAL_SUCCESS;
+	DB_STATUS dbRet = DB_FAILURE;
 	HOSTIF_MsgData_t Param = {0};
 	memset(&Param, '\0', sizeof(HOSTIF_MsgData_t));
 
-	strncpy(Param.paramName,pParameterName,strlen(pParameterName)+1);
-	Param.paramtype=hostIf_StringType;
-	Param.instanceNum = 0;
-
-	// TODO: What about array of values
-	ret = get_ParamValues_tr69hostIf(Param);
-
-	if(ret == WAL_SUCCESS)
+	if(dbhandle)
 	{
-		parametervalArr[0] = (ParamVal **) malloc(sizeof(ParamVal*));
-		// TODO: What about array of values
-		//Allocate value and copy
-		parametervalArr[0][0]->value=malloc(sizeof(char)*strlen(Param.paramValue));
-		strncpy((parametervalArr[0][0])->value,Param.paramValue, strlen(Param.paramValue));
-	}
-	else
-	{
-		printf("get_ParamValues_tr69hostIf failed:ret is %d\n",ret);
+		if(strchr(pParameterName,wcard))
+		{
+			char **getParamList;
+			int paramCount = 0;
+
+			/* Translate wildcard to list of parameters */
+			getParamList = (char **) malloc(MAX_NUM_PARAMETERS * sizeof(char *));
+			dbRet = getParameterList((void *)dbhandle,pParameterName,getParamList,&paramCount);
+
+			parametervalArr[0] = (ParamVal **) malloc(paramCount * sizeof(ParamVal*));
+
+			for(i = 0; i < paramCount; i++)
+			{
+				printf("%s\n",getParamList[i]);
+				strncpy(Param.paramName,getParamList[i],strlen(getParamList[i])+1);
+				Param.paramtype=hostIf_StringType;
+				Param.instanceNum = 0;
+
+				ret = get_ParamValues_tr69hostIf(&Param);
+
+				if(ret == WAL_SUCCESS)
+				{
+					parametervalArr[0][i]=malloc(sizeof(ParamVal));
+					parametervalArr[0][i]->name=malloc(sizeof(char)*strlen(Param.paramName)+1);
+					parametervalArr[0][i]->value=malloc(sizeof(char)*strlen(Param.paramValue)+1);
+					char *ptrtovalue = parametervalArr[0][i]->value;
+					strncpy(ptrtovalue,Param.paramValue, strlen(Param.paramValue));
+					ptrtovalue[strlen(Param.paramValue)] = '\0';
+					printf("CMCSA:: GetParamInfo value is %s ptrtovalue %s\n",parametervalArr[0][i]->value,ptrtovalue);
+				}
+			}
+		}
+		else /* No wildcard, check whether given parameter is valid */
+		{
+			if(isParameterValid((void *)dbhandle,pParameterName))
+			{
+				strncpy(Param.paramName,pParameterName,strlen(pParameterName)+1);
+				Param.paramtype=hostIf_StringType;
+				Param.instanceNum = 0;
+
+				ret = get_ParamValues_tr69hostIf(&Param);
+				if(ret == WAL_SUCCESS)
+				{
+					parametervalArr[0] = (ParamVal **) malloc(sizeof(ParamVal*));
+					// TODO: What about array of values
+					parametervalArr[0][0]=malloc(sizeof(ParamVal));
+					parametervalArr[0][0]->name=malloc(sizeof(char)*strlen(Param.paramName)+1);
+					parametervalArr[0][0]->value=malloc(sizeof(char)*strlen(Param.paramValue)+1);
+					char *ptrtovalue = parametervalArr[0][0]->value;
+					strncpy(ptrtovalue,Param.paramValue, strlen(Param.paramValue));
+					ptrtovalue[strlen(Param.paramValue)] = '\0';
+					//printf("CMCSA:: GetParamInfo value is %s ptrtovalue %s\n",parametervalArr[0][0]->value,ptrtovalue);
+				}
+				else
+				{
+					printf("get_ParamValues_tr69hostIf failed:ret is %d\n",ret);
+				}
+			}
+			else
+			{
+				return WAL_ERR_INVALID_PARAMETER_NAME;
+			}
+		}
 	}
 }
 
