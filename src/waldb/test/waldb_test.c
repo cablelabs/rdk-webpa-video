@@ -25,7 +25,7 @@ int main(int argc,char *argv[])
 
     //Load document model
     int dbhandle = 0;
-    ret = loaddb("./data-model.xml",(void *)&dbhandle);
+    ret = loaddb("/etc/data-model.xml",(void *)&dbhandle);
 
     const char wcard = '*';
     int i = 0;
