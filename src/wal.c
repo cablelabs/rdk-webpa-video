@@ -9,6 +9,7 @@ typedef unsigned int bool;
 #include <stdlib.h>
 
 #define MAX_NUM_PARAMETERS 2048
+#define MAX_DATATYPE_LENGTH 48
 static int get_ParamValues_tr69hostIf(HOSTIF_MsgData_t *param);
 static int GetParamInfo(const char *pParameterName, ParamVal ***parametervalArr,int *TotalParams);
 static int set_ParamValues_tr69hostIf (HOSTIF_MsgData_t param);
@@ -16,7 +17,57 @@ static int SetParamInfo(ParamVal paramVal);
 static int getParamAttributes(const char *pParameterName, AttrVal ***attr, int *TotalParams);
 static int setParamAttributes(const char *pParameterName, const AttrVal *attArr);
 
+static void converttohostIfType(char *ParamDataType,HostIf_ParamType_t* pParamType);
+static void converttoWalType(HostIf_ParamType_t paramType,DATA_TYPE* walType);
+
 static int dbhandle = 0;
+
+static void converttohostIfType(char *ParamDataType,HostIf_ParamType_t* pParamType)
+{
+	if(!strcmp(ParamDataType,"string"))
+		*pParamType = hostIf_StringType;
+	else if(!strcmp(ParamDataType,"unsignedInt"))
+		*pParamType = hostIf_UnsignedIntType;
+	else if(!strcmp(ParamDataType,"int"))
+		*pParamType = hostIf_IntegerType;
+	else if(!strcmp(ParamDataType,"unsignedLong"))
+		*pParamType = hostIf_UnsignedLongType;
+	else if(!strcmp(ParamDataType,"boolean"))
+		*pParamType = hostIf_BooleanType;
+	else if(!strcmp(ParamDataType,"hexBinary"))
+		*pParamType = hostIf_StringType;
+	else
+		*pParamType = hostIf_StringType;
+}
+
+static void converttoWalType(HostIf_ParamType_t paramType,DATA_TYPE* pwalType)
+{
+	switch(paramType)
+	{
+	case hostIf_StringType:
+		*pwalType = WAL_STRING;
+		break;
+	case hostIf_UnsignedIntType:
+		*pwalType = WAL_UINT;
+		break;
+	case hostIf_IntegerType:
+		*pwalType = WAL_INT;
+		break;
+	case hostIf_BooleanType:
+		*pwalType = WAL_BOOLEAN;
+		break;
+	case hostIf_UnsignedLongType:
+		*pwalType = WAL_ULONG;
+		break;
+	case hostIf_DateTimeType:
+		*pwalType = WAL_DATETIME;
+		break;
+	default:
+		*pwalType = WAL_STRING;
+		break;
+	}
+}
+
 
 /**
  * @brief getValues interface returns the parameter values.
@@ -39,7 +90,7 @@ void getValues(const char *paramName[], const unsigned int paramCount, ParamVal 
 	for (cnt = 0; cnt < paramCount; cnt++) {
 		retStatus[cnt] = GetParamInfo(paramName[cnt], &paramValArr[cnt],&numParams);
 		retValCount[cnt]=numParams;
-		printf("Parameter Name: %s, Parameter Value: %s return: %d\n",paramName[cnt],(paramValArr[cnt][0])->value,retStatus[cnt]);
+		//printf("Parameter Name: %s, Parameter Value: %s return: %d\n",paramName[cnt],(paramValArr[cnt][0])->value,retStatus[cnt]);
 	}
 }
 
@@ -95,7 +146,6 @@ WAL_STATUS RegisterNotifyCB(notifyCB cb)
 static int get_ParamValues_tr69hostIf(HOSTIF_MsgData_t *ptrParam)
 {
 	IARM_Result_t ret = IARM_RESULT_IPCCORE_FAIL;
-	printf("[%s:%d] Enter\n", __FUNCTION__, __LINE__ );
 
 	ptrParam->reqType = HOSTIF_GET;
 
@@ -108,7 +158,8 @@ static int get_ParamValues_tr69hostIf(HOSTIF_MsgData_t *ptrParam)
 	}
 	else
 	{
-		printf("[%s:%s:%d] The value for param: %s is %s paramLen : %d\n", __FILE__, __FUNCTION__, __LINE__, ptrParam->paramName,ptrParam->paramValue, ptrParam->paramLen);
+//		printf("[%s:%s:%d] The value for param: %s is %s paramLen : %d\n", __FILE__, __FUNCTION__, __LINE__, ptrParam->paramName,ptrParam->paramValue, ptrParam->paramLen);
+		;
 	}
 
 	return WAL_SUCCESS;
@@ -130,67 +181,93 @@ static int GetParamInfo(const char *pParameterName, ParamVal ***parametervalArr,
 		if(strchr(pParameterName,wcard))
 		{
 			char **getParamList;
+			char **ParamDataTypeList;
 			int paramCount = 0;
 
 			/* Translate wildcard to list of parameters */
 			getParamList = (char **) malloc(MAX_NUM_PARAMETERS * sizeof(char *));
-			dbRet = getParameterList((void *)dbhandle,pParameterName,getParamList,&paramCount);
-
+			ParamDataTypeList = (char **) malloc(MAX_NUM_PARAMETERS * sizeof(char *));
+			dbRet = getParameterList((void *)dbhandle,pParameterName,getParamList,ParamDataTypeList,&paramCount);
+			*TotalParams = paramCount;
 			parametervalArr[0] = (ParamVal **) malloc(paramCount * sizeof(ParamVal*));
 
 			for(i = 0; i < paramCount; i++)
 			{
-				printf("%s\n",getParamList[i]);
+				//printf("%s:%s\n",getParamList[i],ParamDataTypeList[i]);
 				strncpy(Param.paramName,getParamList[i],strlen(getParamList[i])+1);
-				Param.paramtype=hostIf_StringType;
+
+				// Convert ParamDataType to hostIf datatype
+				converttohostIfType(ParamDataTypeList[i],&(Param.paramtype));
 				Param.instanceNum = 0;
+				parametervalArr[0][i]=malloc(sizeof(ParamVal));
+				// Convert Param.paramtype to ParamVal.type
+				converttoWalType(Param.paramtype,&(parametervalArr[0][i]->type));
+
 
 				ret = get_ParamValues_tr69hostIf(&Param);
 
 				if(ret == WAL_SUCCESS)
 				{
-					parametervalArr[0][i]=malloc(sizeof(ParamVal));
 					parametervalArr[0][i]->name=malloc(sizeof(char)*strlen(Param.paramName)+1);
 					parametervalArr[0][i]->value=malloc(sizeof(char)*strlen(Param.paramValue)+1);
 					char *ptrtovalue = parametervalArr[0][i]->value;
+					char *ptrtoname = parametervalArr[0][i]->name;
+					strncpy(ptrtoname,Param.paramName, strlen(Param.paramName));
+					ptrtoname[strlen(Param.paramName)] = '\0';
 					strncpy(ptrtovalue,Param.paramValue, strlen(Param.paramValue));
 					ptrtovalue[strlen(Param.paramValue)] = '\0';
-					printf("CMCSA:: GetParamInfo value is %s ptrtovalue %s\n",parametervalArr[0][i]->value,ptrtovalue);
 				}
+				else
+				{
+					ret = WAL_FAILURE;
+				}
+				free(getParamList[i]);
+				free(ParamDataTypeList[i]);
 			}
+			free(getParamList);
+			free(ParamDataTypeList);
 		}
 		else /* No wildcard, check whether given parameter is valid */
 		{
-			if(isParameterValid((void *)dbhandle,pParameterName))
+			char *dataType = malloc(sizeof(char) * MAX_DATATYPE_LENGTH);
+			if(isParameterValid((void *)dbhandle,pParameterName,dataType))
 			{
+				*TotalParams = 1;
 				strncpy(Param.paramName,pParameterName,strlen(pParameterName)+1);
-				Param.paramtype=hostIf_StringType;
+				converttohostIfType(dataType,&(Param.paramtype));
 				Param.instanceNum = 0;
+				parametervalArr[0] = (ParamVal **) malloc(sizeof(ParamVal*));
+				parametervalArr[0][0]=malloc(sizeof(ParamVal));
+				// Convert Param.paramtype to ParamVal.type
+				converttoWalType(Param.paramtype,&(parametervalArr[0][0]->type));
 
 				ret = get_ParamValues_tr69hostIf(&Param);
 				if(ret == WAL_SUCCESS)
 				{
-					parametervalArr[0] = (ParamVal **) malloc(sizeof(ParamVal*));
-					// TODO: What about array of values
-					parametervalArr[0][0]=malloc(sizeof(ParamVal));
 					parametervalArr[0][0]->name=malloc(sizeof(char)*strlen(Param.paramName)+1);
 					parametervalArr[0][0]->value=malloc(sizeof(char)*strlen(Param.paramValue)+1);
 					char *ptrtovalue = parametervalArr[0][0]->value;
 					strncpy(ptrtovalue,Param.paramValue, strlen(Param.paramValue));
 					ptrtovalue[strlen(Param.paramValue)] = '\0';
+					char *ptrtoname = parametervalArr[0][0]->name;
+					strncpy(ptrtoname,Param.paramName, strlen(Param.paramName));
+					ptrtoname[strlen(Param.paramName)] = '\0';
 					//printf("CMCSA:: GetParamInfo value is %s ptrtovalue %s\n",parametervalArr[0][0]->value,ptrtovalue);
 				}
 				else
 				{
 					printf("get_ParamValues_tr69hostIf failed:ret is %d\n",ret);
+					ret = WAL_FAILURE;
 				}
 			}
 			else
 			{
 				return WAL_ERR_INVALID_PARAMETER_NAME;
 			}
+			free(dataType);
 		}
 	}
+	return ret;
 }
 
 /**
@@ -247,7 +324,7 @@ static int SetParamInfo(ParamVal paramVal)
 	strncpy(Param.paramValue, paramVal.value,strlen(paramVal.value));
 
 	/* Convert DATA_TYPE to ParamType */
-	switch(Param.paramtype)
+	switch(paramVal.type)
 	{
 	case WAL_STRING:
 		Param.paramtype = hostIf_StringType;
@@ -290,6 +367,7 @@ static int SetParamInfo(ParamVal paramVal)
 	}
 
 	ret = set_ParamValues_tr69hostIf(Param);
+	printf("set_ParamValues_tr69hostIf %d\n",ret);
 	return ret;
 }
 
@@ -341,8 +419,9 @@ static int setParamAttributes(const char *pParameterName, const AttrVal *attArr)
 	// TODO:Implement Attributes
 }
 
-int main ( int arc, char **argv )
+/* int main ( int arc, char **argv )
 {
-     // TODO:Implement main
-     return 0;
+	// TODO:Implement main
+	return 0;
 }
+*/
