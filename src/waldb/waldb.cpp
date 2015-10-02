@@ -1,6 +1,6 @@
 #include <iostream>
 #include <string>
-#include "waldb.h"
+#include "waldb/waldb.h"
 #include "tinyxml.h"
 #include "stdlib.h"
 

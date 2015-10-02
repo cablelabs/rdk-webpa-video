@@ -6,7 +6,7 @@ AC_INIT([webpavideo], [1.0], [saravanan_sachithanantham2@cable.comcast.com])
 #AC_CONFIG_SRCDIR([webpa])
 AC_CONFIG_MACRO_DIR([cfg])
 AC_CONFIG_AUX_DIR([cfg])
-AM_INIT_AUTOMAKE([foreign no-dist-gzip dist-bzip2 1.9])
+AM_INIT_AUTOMAKE([subdir-objects foreign no-dist-gzip dist-bzip2 1.9])
 #AC_CONFIG_HEADERS([cfg/config.h])
 #AC_CONFIG_SRCDIR([src/wal.h])
 
@@ -42,6 +42,11 @@ AC_TYPE_SIZE_T
 # Checks for library functions.
 
 #AC_CONFIG_FILES([Makefile])
-AC_CONFIG_FILES([Makefile])
+AC_CONFIG_FILES([Makefile
+                 src/Makefile
+                 src/wal/Makefile
+                 src/waldb/Makefile
+                 tests/waldb/Makefile
+                 tests/Makefile])
 
 AC_OUTPUT

@@ -1,7 +1,4 @@
-SUBDIRS = 
-AM_CFLAGS= -I${PKG_CONFIG_SYSROOT_DIR}/$(includedir)/rdk/iarmbus
-AM_LDFLAGS= -lIARMBus
+SUBDIRS = src tests 
 bin_PROGRAMS= webpavideo
-webpavideo_SOURCES = src/wal.c
-
-
+webpavideo_SOURCES = src/main.c
+webpavideo_LDADD = $(top_builddir)/src/wal/libwal.la
