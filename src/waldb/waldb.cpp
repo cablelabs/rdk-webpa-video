@@ -140,7 +140,7 @@ static void checkforParameterMatch(TiXmlNode *pParent,char *paramName,int *pMatc
 	TiXmlNode *pChild;
 	static int isObject = 0;
 	static char ObjectName[MAX_PARAMETER_LENGTH];
-	char ParameterName[MAX_PARAMETER_LENGTH];
+	char *ParameterName = (char *) malloc(sizeof(char) * MAX_PARAMETER_LENGTH);
 
 	if(pParent->Type() == TiXmlNode::TINYXML_ELEMENT)
 	{
@@ -152,19 +152,21 @@ static void checkforParameterMatch(TiXmlNode *pParent,char *paramName,int *pMatc
 		if(pAttrib)
 		{
 			// Construct Object without parameter from input ParamName
-			std::string str1(paramName);
-			std::size_t found = str1.find_last_of(".");
-			char paramObject[MAX_PARAMETER_LENGTH];
+			std::string *str1 = new std::string(paramName);
+			std::size_t found = str1->find_last_of(".");
+			char *paramObject = (char *) malloc(sizeof(char) * MAX_PARAMETER_LENGTH);
 			strncpy(paramObject,paramName,found);
 			paramObject[found]='.';
 			paramObject[found+1]='\0';
 
+			free(str1);
 			if(!strcmp(pAttrib->Value(),paramObject))
 			{
 				strncpy(ObjectName,pAttrib->Value(),MAX_PARAMETER_LENGTH-1);
 				ObjectName[MAX_PARAMETER_LENGTH] = '\0';
 				matched = 1;
 			}
+			free(paramObject);
 
 			if(matched || !isObject)
 			{
@@ -184,6 +186,8 @@ static void checkforParameterMatch(TiXmlNode *pParent,char *paramName,int *pMatc
 			}
 		}
 	}
+
+	free(ParameterName);
 
 	for ( pChild = pParent->FirstChild(); pChild != 0; pChild = pChild->NextSibling())
 	{

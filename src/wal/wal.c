@@ -230,14 +230,20 @@ static int GetParamInfo(const char *pParameterName, ParamVal ***parametervalArr,
 		else /* No wildcard, check whether given parameter is valid */
 		{
 			char *dataType = malloc(sizeof(char) * MAX_DATATYPE_LENGTH);
+			parametervalArr[0] = (ParamVal **) malloc(sizeof(ParamVal*));
+			memset(parametervalArr[0],0,sizeof(ParamVal*));
+			parametervalArr[0][0]=malloc(sizeof(ParamVal));
+			memset(parametervalArr[0][0],0,sizeof(ParamVal));
+			parametervalArr[0][0]->name = NULL;
+			parametervalArr[0][0]->value = NULL;
+			parametervalArr[0][0]->type = 0;
+			
 			if(isParameterValid((void *)dbhandle,pParameterName,dataType))
 			{
 				*TotalParams = 1;
 				strncpy(Param.paramName,pParameterName,strlen(pParameterName)+1);
 				converttohostIfType(dataType,&(Param.paramtype));
 				Param.instanceNum = 0;
-				parametervalArr[0] = (ParamVal **) malloc(sizeof(ParamVal*));
-				parametervalArr[0][0]=malloc(sizeof(ParamVal));
 				// Convert Param.paramtype to ParamVal.type
 				converttoWalType(Param.paramtype,&(parametervalArr[0][0]->type));
 
