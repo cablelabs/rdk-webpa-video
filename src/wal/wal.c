@@ -90,7 +90,7 @@ void getValues(const char *paramName[], const unsigned int paramCount, ParamVal 
 	for (cnt = 0; cnt < paramCount; cnt++) {
 		retStatus[cnt] = GetParamInfo(paramName[cnt], &paramValArr[cnt],&numParams);
 		retValCount[cnt]=numParams;
-		//printf("Parameter Name: %s, Parameter Value: %s return: %d\n",paramName[cnt],(paramValArr[cnt][0])->value,retStatus[cnt]);
+		RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"Parameter Name: %s, Parameter Value: %s return: %d\n",paramName[cnt],(paramValArr[cnt][0])->value,retStatus[cnt]);
 	}
 }
 
@@ -115,7 +115,7 @@ WAL_STATUS msgBusInit(const char *name)
 	ret = IARM_Bus_Connect();
 	if(ret != IARM_RESULT_SUCCESS)
 	{
-		printf("Error connecting to IARM Bus for '%s'\r\n", name);
+		RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error connecting to IARM Bus for '%s'\r\n", name);
 		return WAL_FAILURE;
 	}
 
@@ -124,7 +124,7 @@ WAL_STATUS msgBusInit(const char *name)
 
 	if(dbRet != DB_SUCCESS)
 	{
-		printf("Error loading database\n");
+		RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error loading database\n");
 		return WAL_FAILURE;
 	}
 }
@@ -153,13 +153,12 @@ static int get_ParamValues_tr69hostIf(HOSTIF_MsgData_t *ptrParam)
 
 
 	if(ret != IARM_RESULT_SUCCESS) {
-		printf("[%s:%s:%d] Failed in IARM_Bus_Call(), with return value: %d\n", __FILE__, __FUNCTION__, __LINE__, ret);
+		RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"[%s:%s:%d] Failed in IARM_Bus_Call(), with return value: %d\n", __FILE__, __FUNCTION__, __LINE__, ret);
 		return WAL_ERR_INVALID_PARAM;
 	}
 	else
 	{
-//		printf("[%s:%s:%d] The value for param: %s is %s paramLen : %d\n", __FILE__, __FUNCTION__, __LINE__, ptrParam->paramName,ptrParam->paramValue, ptrParam->paramLen);
-		;
+		 RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"[%s:%s:%d] The value for param: %s is %s paramLen : %d\n", __FILE__, __FUNCTION__, __LINE__, ptrParam->paramName,ptrParam->paramValue, ptrParam->paramLen);
 	}
 
 	return WAL_SUCCESS;
@@ -193,7 +192,7 @@ static int GetParamInfo(const char *pParameterName, ParamVal ***parametervalArr,
 
 			for(i = 0; i < paramCount; i++)
 			{
-				//printf("%s:%s\n",getParamList[i],ParamDataTypeList[i]);
+				RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"%s:%s\n",getParamList[i],ParamDataTypeList[i]);
 				strncpy(Param.paramName,getParamList[i],strlen(getParamList[i])+1);
 
 				// Convert ParamDataType to hostIf datatype
@@ -258,11 +257,11 @@ static int GetParamInfo(const char *pParameterName, ParamVal ***parametervalArr,
 					char *ptrtoname = parametervalArr[0][0]->name;
 					strncpy(ptrtoname,Param.paramName, strlen(Param.paramName));
 					ptrtoname[strlen(Param.paramName)] = '\0';
-					//printf("CMCSA:: GetParamInfo value is %s ptrtovalue %s\n",parametervalArr[0][0]->value,ptrtovalue);
+					RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"CMCSA:: GetParamInfo value is %s ptrtovalue %s\n",parametervalArr[0][0]->value,ptrtovalue);
 				}
 				else
 				{
-					printf("get_ParamValues_tr69hostIf failed:ret is %d\n",ret);
+					RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"get_ParamValues_tr69hostIf failed:ret is %d\n",ret);
 					ret = WAL_FAILURE;
 				}
 			}
@@ -305,12 +304,12 @@ static int set_ParamValues_tr69hostIf (HOSTIF_MsgData_t param)
 	                    (void *)&param,
 	                    sizeof(param));
 	if(ret != IARM_RESULT_SUCCESS) {
-		printf("[%s:%s:%d] Failed in IARM_Bus_Call(), with return value: %d\n", __FILE__, __FUNCTION__, __LINE__, ret);
+		RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"[%s:%s:%d] Failed in IARM_Bus_Call(), with return value: %d\n", __FILE__, __FUNCTION__, __LINE__, ret);
 		return WAL_ERR_INVALID_PARAMETER_NAME;
 	}
 	else
 	{
-		printf("[%s:%s:%d] Set Successful for value : %s\n", __FILE__, __FUNCTION__, __LINE__, (char *)param.paramValue);
+		RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"[%s:%s:%d] Set Successful for value : %s\n", __FILE__, __FUNCTION__, __LINE__, (char *)param.paramValue);
 	}
 	return WAL_SUCCESS;
 }
@@ -373,7 +372,7 @@ static int SetParamInfo(ParamVal paramVal)
 	}
 
 	ret = set_ParamValues_tr69hostIf(Param);
-	printf("set_ParamValues_tr69hostIf %d\n",ret);
+	RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"set_ParamValues_tr69hostIf %d\n",ret);
 	return ret;
 }
 
@@ -393,7 +392,7 @@ void getAttributes(const char *paramName[], const unsigned int paramCount, AttrV
 	for(cnt=0; cnt<paramCount; cnt++)
 	{
 		retStatus[cnt]=getParamAttributes(paramName[cnt], &attr[cnt], &retAttrCount[cnt]);
-		printf("Parameter Name: %s, Parameter Attributes return: %d\n",paramName[cnt],retStatus[cnt]);
+		RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"Parameter Name: %s, Parameter Attributes return: %d\n",paramName[cnt],retStatus[cnt]);
 	}
 }
 

@@ -17,7 +17,7 @@ int paramCount = 1;
 
 if(argc<=1)
 {
-	printf("Usage: ./webpatest <set/get> <optional list of parameters>");
+	RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Usage: ./webpatest <set/get> <optional list of parameters>");
 	exit(0);
 }
 
@@ -29,7 +29,7 @@ if(argc>2)
 		getParamList[i] = (char *) malloc(MAX_PARAMETER_LENGTH);		
 		strncpy(getParamList[i],argv[i+2],MAX_PARAMETER_LENGTH-1);
 		getParamList[i][MAX_PARAMETER_LENGTH] = '\0';
-		printf("getParamList[%d] is %s\n",i,getParamList[i]);
+		RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"getParamList[%d] is %s\n",i,getParamList[i]);
 	}
 }
 else
@@ -52,22 +52,22 @@ for(i=0;i<paramCount;i++)
 	{
 	for(j=0;j<count[i];j++)
 	{
-		//printf("getValues returned parmetername isvalue is %s datatype is %d\n",(parametervalArr[i][j])->value,(parametervalArr[i][j])->type);
-		printf("getValues returned parmetername is: %s",(parametervalArr[i][j])->name);
+		//  RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"getValues returned parmetername isvalue is %s datatype is %d\n",(parametervalArr[i][j])->value,(parametervalArr[i][j])->type);
+		RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"getValues returned parmetername is: %s",(parametervalArr[i][j])->name);
 		switch((parametervalArr[i][j])->type)
 		{
 			case WAL_STRING:
-				printf(" value is:%s\n",(parametervalArr[i][j])->value);
+				RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA," value is:%s\n",(parametervalArr[i][j])->value);
 				break;
 			case WAL_INT:
 			case WAL_UINT:
 			case WAL_BOOLEAN:
 			case WAL_LONG:
 			case WAL_ULONG:
-				printf("value is:%d\n",*((int *)(parametervalArr[i][j])->value));
+				RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"value is:%d\n",*((int *)(parametervalArr[i][j])->value));
 				break;
 			default:
-				printf("\n");
+				RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"\n");
 				break;
 		}
 	}
@@ -88,8 +88,8 @@ else if(!strcmp(argv[1],"set")) /*Test setvalues*/
 }
 else
 {
-	printf("Unsupported action\n");
-	printf("Usage: ./webpatest <set/get> <optional list of parameters>");
+	  RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Unsupported action\n");
+	  RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Usage: ./webpatest <set/get> <optional list of parameters>");
 }
 
    /*TODO: Free up allocated resources*/
