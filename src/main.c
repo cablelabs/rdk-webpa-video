@@ -5,17 +5,17 @@
  *
  * Copyright (c) 2015  Comcast
  */
+#include <stdlib.h>
+#include <signal.h>
 #include "wal.h"
 #include "websocket_mgr.h"
-#include "stdlib.h"
-#include "signal.h"
 #include "rdk_debug.h"
 
 
 /*----------------------------------------------------------------------------*/
 /*                             Function Prototypes                            */
 /*----------------------------------------------------------------------------*/
-static void __terminate_listener(int value);
+//static void __terminate_listener(int value);
 static void sig_handler(int sig);
 
 #ifdef RDK_LOGGER_ENABLED
@@ -71,12 +71,13 @@ int main(int argc,char *argv[])
 /*----------------------------------------------------------------------------*/
 /*                             Internal functions                             */
 /*----------------------------------------------------------------------------*/
-static void __terminate_listener(int value) {
+/*static void __terminate_listener(int value) {
 	terminateSocketConnection();
 	return;
-}
+}*/
 static void sig_handler(int sig)
 {
+#if 0
 	if ( sig == SIGINT ) {
 		signal(SIGINT, sig_handler); /* reset it to this function */
 		RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"WEBPA SIGINT received!\n");
@@ -110,5 +111,13 @@ static void sig_handler(int sig)
 		RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"WEBPA Signal %d received!\n", sig);
 		exit(0);
 	}
+#endif
+        if( sig == SIGTERM ) {
+                terminateSocketConnection();
+        }
+
+        signal(sig, SIG_DFL );
+        kill(getpid(), sig );
+
 }
 
