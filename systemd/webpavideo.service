@@ -3,7 +3,7 @@ Description=webpa video Daemon
 After=tr69hostif.service
 
 [Service]
-ExecStart=/usr/bin/webpavideo
+ExecStart=/usr/bin/webpavideo --debugconfig /etc/debug.ini
 ExecStop=/bin/kill -15 $MAINPID
 Restart=always
 
