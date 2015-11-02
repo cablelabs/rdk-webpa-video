@@ -20,7 +20,7 @@ static int setParamAttributes(const char *pParameterName, const AttrVal *attArr)
 static void converttohostIfType(char *ParamDataType,HostIf_ParamType_t* pParamType);
 static void converttoWalType(HostIf_ParamType_t paramType,DATA_TYPE* walType);
 
-static int dbhandle = 0;
+static int g_dbhandle = 0;
 
 static void converttohostIfType(char *ParamDataType,HostIf_ParamType_t* pParamType)
 {
@@ -120,7 +120,7 @@ WAL_STATUS msgBusInit(const char *name)
 	}
 
 	// Load Document model
-	dbRet = loaddb("/etc/data-model.xml",(void *)&dbhandle);
+	dbRet = loaddb("/etc/data-model.xml",(void *)&g_dbhandle);
 
 	if(dbRet != DB_SUCCESS)
 	{
@@ -170,12 +170,12 @@ static int GetParamInfo(const char *pParameterName, ParamVal ***parametervalArr,
 	//Check if pParameterName is in the tree and convert to a list if a wildcard/branch
 	const char wcard = '*'; // TODO: Currently support only wildcard character *
 	int i = 0;
-	int ret = WAL_SUCCESS;
+	int ret = WAL_FAILURE;
 	DB_STATUS dbRet = DB_FAILURE;
 	HOSTIF_MsgData_t Param = {0};
 	memset(&Param, '\0', sizeof(HOSTIF_MsgData_t));
 
-	if(dbhandle)
+	if(g_dbhandle)
 	{
 		if(strchr(pParameterName,wcard))
 		{
@@ -186,7 +186,7 @@ static int GetParamInfo(const char *pParameterName, ParamVal ***parametervalArr,
 			/* Translate wildcard to list of parameters */
 			getParamList = (char **) malloc(MAX_NUM_PARAMETERS * sizeof(char *));
 			ParamDataTypeList = (char **) malloc(MAX_NUM_PARAMETERS * sizeof(char *));
-			dbRet = getParameterList((void *)dbhandle,pParameterName,getParamList,ParamDataTypeList,&paramCount);
+			dbRet = getParameterList((void *)g_dbhandle,pParameterName,getParamList,ParamDataTypeList,&paramCount);
 			*TotalParams = paramCount;
 			parametervalArr[0] = (ParamVal **) malloc(paramCount * sizeof(ParamVal*));
 
@@ -237,7 +237,7 @@ static int GetParamInfo(const char *pParameterName, ParamVal ***parametervalArr,
 			parametervalArr[0][0]->value = NULL;
 			parametervalArr[0][0]->type = 0;
 			
-			if(isParameterValid((void *)dbhandle,pParameterName,dataType))
+			if(isParameterValid((void *)g_dbhandle,pParameterName,dataType))
 			{
 				*TotalParams = 1;
 				strncpy(Param.paramName,pParameterName,strlen(pParameterName)+1);
@@ -267,6 +267,7 @@ static int GetParamInfo(const char *pParameterName, ParamVal ***parametervalArr,
 			}
 			else
 			{
+				RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA," Invalid Parameter name %s\n",pParameterName);
 				return WAL_ERR_INVALID_PARAMETER_NAME;
 			}
 			free(dataType);
@@ -325,54 +326,31 @@ static int SetParamInfo(ParamVal paramVal)
 	char paramName[100] = { 0 };
 
 
-	strncpy(Param.paramName, paramVal.name,strlen(paramVal.name));
-	strncpy(Param.paramValue, paramVal.value,strlen(paramVal.value));
-
-	/* Convert DATA_TYPE to ParamType */
-	switch(paramVal.type)
-	{
-	case WAL_STRING:
-		Param.paramtype = hostIf_StringType;
-		break;
-	case WAL_INT:
-		Param.paramtype = hostIf_IntegerType;
-		break;
-	case WAL_UINT:
-		Param.paramtype = hostIf_UnsignedIntType;
-		break;
-	case WAL_BOOLEAN:
-		Param.paramtype = hostIf_BooleanType;
-		break;
-	case WAL_DATETIME:
-		Param.paramtype = hostIf_DateTimeType;
-		break;
-	case WAL_BASE64:
-//		Param.paramtype = Base64Type;
-		break;
-	case WAL_LONG:
-		Param.paramtype = hostIf_UnsignedLongType; // TODO: No LongType in Parameter Type?
-		break;
-	case WAL_ULONG:
-		Param.paramtype = hostIf_UnsignedLongType;
-		break;
-	case WAL_FLOAT:
-		//type = ; TODO
-		break;
-	case WAL_DOUBLE:
-		//type = ; TODO
-		break;
-	case WAL_BYTE:
-		//type = ; TODO
-		break;
-	case WAL_NONE:
-		//type = ; TODO
-		break;
-	default:
-		break;
+	char *pdataType = malloc(sizeof(char) * MAX_DATATYPE_LENGTH);
+	if(isParameterValid((void *)g_dbhandle,paramVal.name,pdataType))
+        {	
+		DATA_TYPE walType;
+		converttohostIfType(pdataType,&(Param.paramtype));
+		// Convert Param.paramtype to ParamVal.type
+		converttoWalType(Param.paramtype,&walType);
+		
+		if(walType != paramVal.type)
+		{
+			RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA," Invalid Parameter type for %s\n",paramVal.name);
+			return WAL_ERR_INVALID_PARAMETER_TYPE;
+		}
+		
+		strncpy(Param.paramName, paramVal.name,strlen(paramVal.name));
+		strncpy(Param.paramValue, paramVal.value,strlen(paramVal.value));
+	
+		ret = set_ParamValues_tr69hostIf(Param);
+		RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"set_ParamValues_tr69hostIf %d\n",ret);
 	}
-
-	ret = set_ParamValues_tr69hostIf(Param);
-	RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"set_ParamValues_tr69hostIf %d\n",ret);
+	else
+	{
+		RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA," Invalid Parameter name %s\n",paramVal.name);
+		return WAL_ERR_INVALID_PARAMETER_NAME;
+	}
 	return ret;
 }
 
@@ -399,6 +377,7 @@ void getAttributes(const char *paramName[], const unsigned int paramCount, AttrV
 static int getParamAttributes(const char *pParameterName, AttrVal ***attr, int *TotalParams)
 {
 	// TODO:Implement Attributes
+	return 0;
 }
 
 /**
@@ -422,6 +401,7 @@ void setAttributes(const char *paramName[], const unsigned int paramCount, const
 static int setParamAttributes(const char *pParameterName, const AttrVal *attArr)
 {
 	// TODO:Implement Attributes
+	return 0;
 }
 
 /* int main ( int arc, char **argv )
