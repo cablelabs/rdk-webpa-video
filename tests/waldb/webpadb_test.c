@@ -9,6 +9,7 @@
 
 int main(int argc,char *argv[])
 {
+rdk_logger_init("/etc/debug.ini");
 msgBusInit("Webpa");
 char *getParamList[MAX_NUM_PARAMETERS];
 int i = 0;
