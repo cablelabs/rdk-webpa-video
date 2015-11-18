@@ -2,10 +2,13 @@
 #include <stdio.h>
 #include <string.h>
 #include "wal.h"
+#include "rdk_debug.h"
 
 #define MAX_PARAMETER_LENGTH 512
 #define MAX_NUM_PARAMETERS 512
 #define MAX_VALUE_LENGTH 48
+
+#define LOG_MOD_WEBPA "LOG.RDK.WEBPAVIDEO" //TODO: Replace all RDK_LOG with WalError/WalInfo 
 
 int main(int argc,char *argv[])
 {

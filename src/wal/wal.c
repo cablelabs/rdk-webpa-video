@@ -7,9 +7,22 @@ typedef unsigned int bool;
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include "rdk_debug.h"
 
 #define MAX_NUM_PARAMETERS 2048
 #define MAX_DATATYPE_LENGTH 48
+
+/* WebPA Configuration for RDKV */
+#define RDKV_WEBPA_COMPONENT_NAME            "webpaagent"
+#define RDKV_WEBPA_CFG_FILE                  "/etc/webpa_cfg.json"
+#define RDKV_WEBPA_CFG_FILE_SRC              "/etc/webpa_cfg.json"
+#define RDKV_WEBPA_DEVICE_MAC                "Device.DeviceInfo.X_COMCAST-COM_STB_MAC"
+#define RDKV_XPC_SYNC_PARAM_CID              "not.defined"
+#define RDKV_XPC_SYNC_PARAM_CMC              "not.defined"
+#define RDKV_XPC_SYNC_PARAM_SPV              "not.defined"
+#define STR_NOT_DEFINED                      "Not Defined"
+#define LOG_MOD_WEBPA                        "LOG.RDK.WEBPAVIDEO"
+
 static int get_ParamValues_tr69hostIf(HOSTIF_MsgData_t *param);
 static int GetParamInfo(const char *pParameterName, ParamVal ***parametervalArr,int *TotalParams);
 static int set_ParamValues_tr69hostIf (HOSTIF_MsgData_t param);
@@ -473,6 +486,64 @@ static int setParamAttributes(const char *pParameterName, const AttrVal *attArr)
 {
 	// TODO:Implement Attributes
 	return 0;
+}
+
+/**
+ * @brief _WEBPA_LOG WEBPA RDK Logger API
+ *
+ * @param[in] level LOG Level
+ * @param[in] msg Message to be logged 
+ */
+void _WEBPA_LOG(unsigned int level, const char *msg, ...)
+{
+	//TODO
+}
+
+/**
+ * @brief getWebPAConfig interface returns the WebPA config data.
+ *
+ * @param[in] param WebPA config param name.
+ * @return const char* WebPA config param value.
+ */
+const char* getWebPAConfig(WCFG_PARAM_NAME param)
+{
+	const char *ret = NULL;
+	
+	switch(param)
+	{
+		case WCFG_COMPONENT_NAME:
+			ret = RDKV_WEBPA_COMPONENT_NAME;
+			break;
+
+		case WCFG_CFG_FILE:
+			ret = RDKV_WEBPA_CFG_FILE;
+			break;
+
+		case WCFG_CFG_FILE_SRC:
+			ret = RDKV_WEBPA_CFG_FILE_SRC;
+			break;
+
+		case WCFG_DEVICE_MAC:
+			ret = RDKV_WEBPA_DEVICE_MAC;
+			break;
+
+		case WCFG_XPC_SYNC_PARAM_CID:
+			ret = RDKV_XPC_SYNC_PARAM_CID;
+			break;
+
+		case WCFG_XPC_SYNC_PARAM_CMC:
+			ret = RDKV_XPC_SYNC_PARAM_CMC;
+			break;
+
+		case WCFG_XPC_SYNC_PARAM_SPV:
+			ret = RDKV_XPC_SYNC_PARAM_SPV;
+			break;
+
+		default:
+			ret = STR_NOT_DEFINED;
+	}
+	
+	return ret;
 }
 
 /* int main ( int arc, char **argv )
