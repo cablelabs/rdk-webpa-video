@@ -496,7 +496,38 @@ static int setParamAttributes(const char *pParameterName, const AttrVal *attArr)
  */
 void _WEBPA_LOG(unsigned int level, const char *msg, ...)
 {
-	//TODO
+	va_list arg;
+	char*   pTempChar = (char*)malloc(4096);
+	int ret = 0;
+	unsigned int rdkLogLevel = RDK_LOG_DEBUG;
+
+	switch(level)
+	{
+		case WEBPA_LOG_ERROR:
+			rdkLogLevel = RDK_LOG_ERROR;
+			break;
+
+		case WEBPA_LOG_INFO:
+			rdkLogLevel = RDK_LOG_INFO;
+			break;
+
+		case WEBPA_LOG_PRINT:
+			rdkLogLevel = RDK_LOG_DEBUG;
+			break;
+	}
+
+	if( pTempChar && (rdkLogLevel <= 4) )
+	{
+		va_start(arg, msg);
+		ret = vsnprintf(pTempChar, 4096, msg,arg);
+		va_end(arg);
+		if(ret < 0)
+		{
+			perror(pTempChar);
+		}
+		RDK_LOG(rdkLogLevel,LOG_MOD_WEBPA, pTempChar);
+	}
+	free(pTempChar);
 }
 
 /**
