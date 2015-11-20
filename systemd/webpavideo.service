@@ -3,7 +3,7 @@ Description=webpa video Daemon
 After=tr69hostif.service
 
 [Service]
-ExecStart=/usr/bin/webpavideo --debugconfig /etc/debug.ini
+ExecStart=/bin/sh -c 'source /lib/rdk/opt-override.sh;/usr/bin/webpavideo --debugconfig $DEBUGINIFILE'
 ExecStop=/bin/kill -15 $MAINPID
 Restart=always
 
