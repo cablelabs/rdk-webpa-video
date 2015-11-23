@@ -581,6 +581,17 @@ const char* getWebPAConfig(WCFG_PARAM_NAME param)
 	return ret;
 }
 
+/**
+ * @brief sendIoTMessage interface sends message to IoT. 
+ *
+ * @param[in] msg Message to be sent to IoT.
+ * @param[out] ret Response from IoT.
+ */
+void sendIoTMessage(void *msg, void *ret)
+{
+	//TODO: Implement sendIoTMessage fn
+}
+
 /* int main ( int arc, char **argv )
 {
 	// TODO:Implement main
