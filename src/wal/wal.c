@@ -11,6 +11,7 @@ typedef unsigned int bool;
 
 #define MAX_NUM_PARAMETERS 2048
 #define MAX_DATATYPE_LENGTH 48
+#define MAX_PARAM_LENGTH TR69HOSTIFMGR_MAX_PARAM_LEN
 
 /* WebPA Configuration for RDKV */
 #define RDKV_WEBPA_COMPONENT_NAME            "webpaagent"
@@ -155,7 +156,10 @@ WAL_STATUS msgBusInit(const char *name)
 static void  _tr69Event_handler(const char *owner, IARM_Bus_tr69HostIfMgr_EventId_t eventId, void *data, size_t len)
 {
 	IARM_Bus_tr69HostIfMgr_EventData_t *tr69EventData = (IARM_Bus_tr69HostIfMgr_EventData_t *)data;
-	ParamNotify *paramNotify = (ParamNotify *) malloc(sizeof(ParamNotify));
+	ParamNotify *paramNotify = NULL;
+	paramNotify = (ParamNotify *) malloc(sizeof(ParamNotify));
+	if(paramNotify == NULL)
+		return;
 	memset(paramNotify,0,sizeof(ParamNotify));
 
 	if (0 == strcmp(owner, IARM_BUS_TR69HOSTIFMGR_NAME))
@@ -257,48 +261,88 @@ static int GetParamInfo(const char *pParameterName, ParamVal ***parametervalArr,
 	int ret = WAL_FAILURE;
 	DB_STATUS dbRet = DB_FAILURE;
 	HOSTIF_MsgData_t Param = {0};
-	memset(&Param, '\0', sizeof(HOSTIF_MsgData_t));
 
 	if(g_dbhandle)
 	{
 		if(strchr(pParameterName,wcard))
 		{
-			char **getParamList;
-			char **ParamDataTypeList;
+			char **getParamList = NULL;
+			char **ParamDataTypeList = NULL;
 			int paramCount = 0;
 
 			/* Translate wildcard to list of parameters */
 			getParamList = (char **) malloc(MAX_NUM_PARAMETERS * sizeof(char *));
+			if(getParamList!=NULL)
+			{
+				RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error allocating memory\n");
+				ret = WAL_FAILURE;
+				goto exit0;
+			}
 			ParamDataTypeList = (char **) malloc(MAX_NUM_PARAMETERS * sizeof(char *));
+			if(ParamDataTypeList==NULL)
+			{
+				RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error allocating memory\n");
+				ret = WAL_FAILURE;
+				goto exit0;
+			}
+
 			dbRet = getParameterList((void *)g_dbhandle,pParameterName,getParamList,ParamDataTypeList,&paramCount);
 			*TotalParams = paramCount;
 			parametervalArr[0] = (ParamVal **) malloc(paramCount * sizeof(ParamVal*));
+			if(parametervalArr[0] == NULL)
+			{
+				RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error allocating memory\n");
+				ret = WAL_FAILURE;
+				goto exit0;
+			}
+				
+			memset(parametervalArr[0],0,paramCount * sizeof(ParamVal*));
 
 			for(i = 0; i < paramCount; i++)
 			{
 				RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"%s:%s\n",getParamList[i],ParamDataTypeList[i]);
-				strncpy(Param.paramName,getParamList[i],strlen(getParamList[i])+1);
+				strncpy(Param.paramName,getParamList[i],MAX_PARAM_LENGTH-1);
+				Param.paramName[MAX_PARAM_LENGTH-1]='\0';
 
 				// Convert ParamDataType to hostIf datatype
 				converttohostIfType(ParamDataTypeList[i],&(Param.paramtype));
 				Param.instanceNum = 0;
 				parametervalArr[0][i]=malloc(sizeof(ParamVal));
+				if(parametervalArr[0][i] == NULL)
+				{
+					RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error allocating memory\n");
+					ret = WAL_FAILURE;
+					goto exit0;
+				}
+				memset(parametervalArr[0][i],0,sizeof(ParamVal));
+
 				// Convert Param.paramtype to ParamVal.type
 				converttoWalType(Param.paramtype,&(parametervalArr[0][i]->type));
-
 
 				ret = get_ParamValues_tr69hostIf(&Param);
 
 				if(ret == WAL_SUCCESS)
 				{
-					parametervalArr[0][i]->name=malloc(sizeof(char)*strlen(Param.paramName)+1);
-					parametervalArr[0][i]->value=malloc(sizeof(char)*strlen(Param.paramValue)+1);
-					char *ptrtovalue = parametervalArr[0][i]->value;
+					parametervalArr[0][i]->name=malloc(MAX_PARAM_LENGTH);
 					char *ptrtoname = parametervalArr[0][i]->name;
-					strncpy(ptrtoname,Param.paramName, strlen(Param.paramName));
-					ptrtoname[strlen(Param.paramName)] = '\0';
-					strncpy(ptrtovalue,Param.paramValue, strlen(Param.paramValue));
-					ptrtovalue[strlen(Param.paramValue)] = '\0';
+					if(ptrtoname == NULL)
+					{
+						RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error allocating memory\n");
+						ret = WAL_FAILURE;
+						goto exit0;
+					}
+					parametervalArr[0][i]->value=malloc(MAX_PARAM_LENGTH);
+					char *ptrtovalue = parametervalArr[0][i]->value;
+					if(ptrtovalue == NULL)
+					{
+						RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error allocating memory\n");
+						ret = WAL_FAILURE;
+						goto exit0;
+					}
+					strncpy(ptrtoname,Param.paramName, MAX_PARAM_LENGTH-1);
+					ptrtoname[MAX_PARAM_LENGTH-1] = '\0';
+					strncpy(ptrtovalue,Param.paramValue, MAX_PARAM_LENGTH-1);
+					ptrtovalue[MAX_PARAM_LENGTH-1] = '\0';
 				}
 				else
 				{
@@ -307,16 +351,61 @@ static int GetParamInfo(const char *pParameterName, ParamVal ***parametervalArr,
 				free(getParamList[i]);
 				free(ParamDataTypeList[i]);
 			}
-			free(getParamList);
-			free(ParamDataTypeList);
+exit0:
+			if(ret != WAL_SUCCESS) // For success case generic layer would free up parametervalArr after consuming data
+			{
+				int j;
+				for(j=0;j<i;j++)
+				{
+					if(parametervalArr[0][j]->name != NULL)
+					{
+						free(parametervalArr[0][j]->name);
+						parametervalArr[0][j]->name = NULL;
+					}
+					if(parametervalArr[0][j]->value != NULL)
+					{
+						free(parametervalArr[0][j]->value);
+						parametervalArr[0][j]->value = NULL;
+					}	
+					if(parametervalArr[0][j] != NULL)
+					{
+						free(parametervalArr[0][j]);
+						parametervalArr[0][j] = NULL;
+					}
+				}
+                		if(parametervalArr[0] != NULL)
+					free(parametervalArr[0]);
+			}
+			if(getParamList != NULL)
+				free(getParamList);
+			if(ParamDataTypeList!=NULL)
+				free(ParamDataTypeList);
+			return ret;
 		}
 		else /* No wildcard, check whether given parameter is valid */
 		{
 			char *dataType = malloc(sizeof(char) * MAX_DATATYPE_LENGTH);
+			if(dataType == NULL)
+			{
+				RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error allocating memory\n");
+				ret = WAL_FAILURE;
+				goto exit1;
+			}
 			parametervalArr[0] = (ParamVal **) malloc(sizeof(ParamVal*));
+			if(parametervalArr[0] == NULL)
+			{
+				RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error allocating memory\n");
+				ret = WAL_FAILURE;
+				goto exit1;
+			}
 			memset(parametervalArr[0],0,sizeof(ParamVal*));
 			parametervalArr[0][0]=malloc(sizeof(ParamVal));
-			memset(parametervalArr[0][0],0,sizeof(ParamVal));
+			if(parametervalArr[0][0] == NULL)
+			{
+				RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error allocating memory\n");
+				ret = WAL_FAILURE;
+				goto exit1;
+			}
 			parametervalArr[0][0]->name = NULL;
 			parametervalArr[0][0]->value = NULL;
 			parametervalArr[0][0]->type = 0;
@@ -324,24 +413,85 @@ static int GetParamInfo(const char *pParameterName, ParamVal ***parametervalArr,
 			if(isParameterValid((void *)g_dbhandle,pParameterName,dataType))
 			{
 				*TotalParams = 1;
-				strncpy(Param.paramName,pParameterName,strlen(pParameterName)+1);
+				strncpy(Param.paramName,pParameterName,MAX_PARAM_LENGTH-1);
+				Param.paramName[MAX_PARAM_LENGTH-1]='\0';
 				converttohostIfType(dataType,&(Param.paramtype));
 				Param.instanceNum = 0;
 				// Convert Param.paramtype to ParamVal.type
+				RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"CMCSA:: GetParamInfo Param.paramtype is %d\n",Param.paramtype);
 				converttoWalType(Param.paramtype,&(parametervalArr[0][0]->type));
 
 				ret = get_ParamValues_tr69hostIf(&Param);
 				if(ret == WAL_SUCCESS)
 				{
-					parametervalArr[0][0]->name=malloc(sizeof(char)*strlen(Param.paramName)+1);
-					parametervalArr[0][0]->value=malloc(sizeof(char)*strlen(Param.paramValue)+1);
-					char *ptrtovalue = parametervalArr[0][0]->value;
-					strncpy(ptrtovalue,Param.paramValue, strlen(Param.paramValue));
-					ptrtovalue[strlen(Param.paramValue)] = '\0';
+					parametervalArr[0][0]->name=malloc(sizeof(char)*MAX_PARAM_LENGTH);
+					if(parametervalArr[0][0]->name == NULL)
+					{
+						RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error allocating memory\n");
+						ret = WAL_FAILURE;
+						goto exit1;
+					}
+					memset(parametervalArr[0][0]->name,0,sizeof(char)*MAX_PARAM_LENGTH);
+					switch(Param.paramtype)
+					{
+						case hostIf_IntegerType:
+						case hostIf_UnsignedIntType:
+						case hostIf_UnsignedLongType:
+							parametervalArr[0][0]->value=malloc(sizeof(int));
+							if(parametervalArr[0][0]->value == NULL)
+							{
+								RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error allocating memory\n");
+								ret = WAL_FAILURE;
+								goto exit1;
+							}
+							int *ptrint = (int *)parametervalArr[0][0]->value;
+							*ptrint = *((int *)Param.paramValue);
+							RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"CMCSA:: GetParamInfo Param.paramvalue is %d\n",*((int *)parametervalArr[0][0]->value));
+							break;
+						case hostIf_BooleanType:
+							parametervalArr[0][0]->value=malloc(sizeof(bool));
+							if(parametervalArr[0][0]->value == NULL)
+							{
+								RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error allocating memory\n");
+								ret = WAL_FAILURE;
+								goto exit1;
+							}
+							bool *ptrbool = (bool *)parametervalArr[0][0]->value;
+							*ptrbool = *((bool *)Param.paramValue);
+							RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"CMCSA:: GetParamInfo Param.paramvalue is %d\n",*((bool *)parametervalArr[0][0]->value));
+							break;
+						case hostIf_StringType:
+							parametervalArr[0][0]->value=malloc(sizeof(char)*MAX_PARAM_LENGTH);
+							if(parametervalArr[0][0]->value == NULL)
+							{
+								RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error allocating memory\n");
+								ret = WAL_FAILURE;
+								goto exit1;
+							}
+							memset(parametervalArr[0][0]->value,0,sizeof(char)*MAX_PARAM_LENGTH);
+							char *ptrtovalue = parametervalArr[0][0]->value;
+							strncpy(ptrtovalue,Param.paramValue,MAX_PARAM_LENGTH-1 );
+							ptrtovalue[MAX_PARAM_LENGTH-1] = '\0';
+							RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"CMCSA:: GetParamInfo value is %s ptrtovalue %s\n",parametervalArr[0][0]->value,ptrtovalue);
+							break;
+						default: // handle as string
+							parametervalArr[0][0]->value=malloc(sizeof(char) * MAX_PARAM_LENGTH);
+							if(parametervalArr[0][0]->value == NULL)
+							{
+								RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error allocating memory\n");
+								ret = WAL_FAILURE;
+								goto exit1;
+							}
+							memset(parametervalArr[0][0]->value,0,sizeof(char) * MAX_PARAM_LENGTH);
+							char *ptrtodefvalue = parametervalArr[0][0]->value;
+							strncpy(ptrtodefvalue,Param.paramValue, MAX_PARAM_LENGTH-1);
+							ptrtodefvalue[MAX_PARAM_LENGTH-1] = '\0';
+							RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"CMCSA:: GetParamInfo value is %s\n",parametervalArr[0][0]->value);
+							break;
+					}
 					char *ptrtoname = parametervalArr[0][0]->name;
-					strncpy(ptrtoname,Param.paramName, strlen(Param.paramName));
-					ptrtoname[strlen(Param.paramName)] = '\0';
-					RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"CMCSA:: GetParamInfo value is %s ptrtovalue %s\n",parametervalArr[0][0]->value,ptrtovalue);
+					strncpy(ptrtoname,Param.paramName, MAX_PARAM_LENGTH-1);
+					ptrtoname[MAX_PARAM_LENGTH-1] = '\0';
 				}
 				else
 				{
@@ -354,7 +504,36 @@ static int GetParamInfo(const char *pParameterName, ParamVal ***parametervalArr,
 				RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA," Invalid Parameter name %s\n",pParameterName);
 				return WAL_ERR_INVALID_PARAMETER_NAME;
 			}
-			free(dataType);
+exit1:
+			if(ret != WAL_SUCCESS) // For success case generic layer would free up parametervalArr after consuming data
+			{
+				if(parametervalArr[0][0]->value != NULL)
+				{
+					free(parametervalArr[0][0]->value);
+					parametervalArr[0][0]->value = NULL;
+				}
+				if(parametervalArr[0][0]->name != NULL)
+				{
+					free(parametervalArr[0][0]->name);
+					parametervalArr[0][0]->name = NULL;
+				}
+				if(parametervalArr[0][0] != NULL)
+				{
+					free(parametervalArr[0][0]);
+					parametervalArr[0][0] = NULL;
+				}
+				if(parametervalArr[0])
+				{
+					free(parametervalArr[0]);
+					parametervalArr[0] = NULL;
+				}
+			}
+			if(dataType != NULL)
+			{
+				free(dataType);
+				dataType = NULL;
+			}
+			return ret;
 		}
 	}
 	return ret;
@@ -406,11 +585,14 @@ static int SetParamInfo(ParamVal paramVal)
 	HOSTIF_MsgData_t Param = {0};
 	memset(&Param, '\0', sizeof(HOSTIF_MsgData_t));
 
-	char value[100] = { 0 };
-	char paramName[100] = { 0 };
+	char *pdataType = NULL;
+	pdataType = malloc(sizeof(char) * MAX_DATATYPE_LENGTH);
+	if(pdataType == NULL)
+	{
+		RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error allocating memory\n");
+		return WAL_FAILURE;
+	}
 
-
-	char *pdataType = malloc(sizeof(char) * MAX_DATATYPE_LENGTH);
 	if(isParameterValid((void *)g_dbhandle,paramVal.name,pdataType))
 	{
 		DATA_TYPE walType;
@@ -424,8 +606,10 @@ static int SetParamInfo(ParamVal paramVal)
 			return WAL_ERR_INVALID_PARAMETER_TYPE;
 		}
 
-		strncpy(Param.paramName, paramVal.name,strlen(paramVal.name));
-		strncpy(Param.paramValue, paramVal.value,strlen(paramVal.value));
+		strncpy(Param.paramName, paramVal.name,MAX_PARAM_LENGTH-1);
+		Param.paramName[MAX_PARAM_LENGTH-1]='\0';
+		strncpy(Param.paramValue, paramVal.value,MAX_PARAM_LENGTH-1);
+		Param.paramValue[MAX_PARAM_LENGTH-1]='\0';
 
 		ret = set_ParamValues_tr69hostIf(Param);
 		RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"set_ParamValues_tr69hostIf %d\n",ret);
