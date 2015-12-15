@@ -16,6 +16,7 @@ typedef unsigned int bool;
 #define RDKV_WEBPA_COMPONENT_NAME            "webpaagent"
 #define RDKV_WEBPA_CFG_FILE                  "/etc/webpa_cfg.json"
 #define RDKV_WEBPA_CFG_FILE_SRC              "/etc/webpa_cfg.json"
+#define RDKV_WEBPA_CFG_DEVICE_INTERFACE      "eth1"
 #define RDKV_WEBPA_DEVICE_MAC                "Device.DeviceInfo.X_COMCAST-COM_STB_MAC"
 #define RDKV_XPC_SYNC_PARAM_CID              "not.defined"
 #define RDKV_XPC_SYNC_PARAM_CMC              "not.defined"
@@ -558,6 +559,10 @@ const char* getWebPAConfig(WCFG_PARAM_NAME param)
 			ret = RDKV_WEBPA_CFG_FILE_SRC;
 			break;
 
+		case WCFG_DEVICE_INTERFACE:
+			ret = RDKV_WEBPA_CFG_DEVICE_INTERFACE;
+			break;
+			
 		case WCFG_DEVICE_MAC:
 			ret = RDKV_WEBPA_DEVICE_MAC;
 			break;
