@@ -719,6 +719,31 @@ void _WEBPA_LOG(unsigned int level, const char *msg, ...)
 	}
 }
 
+char *getInterfaceNameFromConfig()
+{
+    char szBuf[256];
+    static char szEthName[32] = "";
+    FILE * fp = fopen("/etc/device.properties", "r");
+    if(NULL != fp)
+    {
+        while(NULL != fgets(szBuf, sizeof(szBuf), fp))
+        {
+            char * pszTag = NULL;
+            if(NULL != (pszTag = strstr(szBuf, "MOCA_INTERFACE")))
+            {
+                char * pszEqual = NULL;
+                if(NULL != (pszEqual = strstr(pszTag, "=")))
+                {
+                    sscanf(pszEqual+1, "%s", szEthName);
+                }
+            }
+        }
+        fclose(fp);
+    }
+    return szEthName;
+}
+
+
 /**
  * @brief getWebPAConfig interface returns the WebPA config data.
  *
@@ -744,9 +769,8 @@ const char* getWebPAConfig(WCFG_PARAM_NAME param)
 			break;
 
 		case WCFG_DEVICE_INTERFACE:
-			ret = RDKV_WEBPA_CFG_DEVICE_INTERFACE;
+			ret = getInterfaceNameFromConfig();  
 			break;
-			
 		case WCFG_DEVICE_MAC:
 			ret = RDKV_WEBPA_DEVICE_MAC;
 			break;
