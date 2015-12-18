@@ -19,13 +19,22 @@ static void checkforParameterMatch(TiXmlNode *pParent,char *paramName,int *pMatc
  */
 DB_STATUS loaddb(const char *filename,void *dbhandle)
 {
-	TiXmlDocument *doc = new TiXmlDocument(filename);
-	bool loadOK = doc->LoadFile();
+	TiXmlDocument *doc = NULL;
 	int *dbhdl = (int *)dbhandle;
-	if( loadOK )
+	doc = new TiXmlDocument(filename);
+	if(doc != NULL)
 	{
-		*dbhdl = (int) doc;
-		return DB_SUCCESS;
+		bool loadOK = doc->LoadFile();
+		if( loadOK )
+		{
+			*dbhdl = (int) doc;
+			return DB_SUCCESS;
+		}
+		else
+		{
+			*dbhdl = 0;
+			return DB_FAILURE;
+		}
 	}
 	else
 	{
@@ -61,7 +70,7 @@ static void getList(TiXmlNode *pParent,char *paramName,char **ptrParamList,char 
 			if(strstr(pAttrib->Value(),paramName))
 			{
 				strncpy(ObjectName,pAttrib->Value(),MAX_PARAMETER_LENGTH-1);
-				ObjectName[MAX_PARAMETER_LENGTH]='\0';
+				ObjectName[MAX_PARAMETER_LENGTH-1]='\0';
 				matched = 1;
 			}
 			if(matched || !isObject)
@@ -76,10 +85,10 @@ static void getList(TiXmlNode *pParent,char *paramName,char **ptrParamList,char 
 
 						strncpy(ptrParamList[*paramCount],ObjectName,MAX_PARAMETER_LENGTH-1);
 						strncat(ptrParamList[*paramCount],pAttrib->Value(),MAX_PARAMETER_LENGTH-1);
-						ptrParamList[*paramCount][MAX_PARAMETER_LENGTH]='\0';
+						ptrParamList[*paramCount][MAX_PARAMETER_LENGTH-1]='\0';
 
 						strncpy(pParamDataTypeList[*paramCount],pParent->FirstChild()->FirstChild()->Value(),MAX_DATATYPE_LENGTH-1);
-						pParamDataTypeList[*paramCount][MAX_DATATYPE_LENGTH]='\0';
+						pParamDataTypeList[*paramCount][MAX_DATATYPE_LENGTH-1]='\0';
 					}
 					*paramCount = *paramCount + 1;
 				}
@@ -107,7 +116,7 @@ DB_STATUS getParameterList(void *dbhandle,char *paramName,char **ParamList,char 
 	const char wcard = '*';  //This API currently supports only paramName with * wildcard
 	char parameterName[MAX_PARAMETER_LENGTH];
 	strncpy(parameterName,paramName,MAX_PARAMETER_LENGTH-1);
-	parameterName[MAX_PARAMETER_LENGTH]='\0';
+	parameterName[MAX_PARAMETER_LENGTH-1]='\0';
 
 	TiXmlDocument *doc = (TiXmlDocument *) dbhandle;
 	if(strchr(parameterName,wcard))
@@ -213,26 +222,43 @@ int isParameterValid(void *dbhandle,char *paramName,char *dataType)
 	std::size_t found = str.find_first_of("0123456789");
 	if(found != std::string::npos)
 	{
+        	/* Check if match happens without a {i} */
+        	checkforParameterMatch(doc,paramName,&Match,dataType);
+        	if(Match)
+            		return true;
 		char *newparamName =(char *) malloc(sizeof(char) * MAX_PARAMETER_LENGTH);
 		char splitParam[MAX_PARAMETER_LENGTH] = "{i}";
-		strncpy(newparamName,paramName,found);
-		newparamName[found]='\0';
-		strncat(splitParam,str.substr(found+1).data(),MAX_PARAMETER_LENGTH-1);
-		splitParam[MAX_PARAMETER_LENGTH]='\0';
+		if(paramName[found+1] == '.')
+		{
+			strncpy(newparamName,paramName,found);
+			newparamName[found]='\0';
+			strncat(splitParam,str.substr(found+1).data(),MAX_PARAMETER_LENGTH-1);
+			splitParam[MAX_PARAMETER_LENGTH-1]='\0';
+		}
+		else
+		{
+                	strncpy(newparamName,paramName,found+1);
+                	newparamName[found+1]='\0';
+                	strncpy(splitParam,paramName+found+1,MAX_PARAMETER_LENGTH);
+			splitParam[MAX_PARAMETER_LENGTH-1]='\0';
+		}
 
 		// Check if splitParam has a digit
 		std::string str(splitParam);
 		std::size_t found = str.find_first_of("0123456789");
 		if(found != std::string::npos)
 		{
-			splitParam[found]='\0';
-			strcat(splitParam,"{i}");
-			strncat(splitParam,str.substr(found+1).data(),MAX_PARAMETER_LENGTH-1);
-			splitParam[MAX_PARAMETER_LENGTH]='\0';
+               		if(splitParam[found+1]=='.')
+                	{
+				splitParam[found]='\0';
+				strcat(splitParam,"{i}");
+				strncat(splitParam,str.substr(found+1).data(),MAX_PARAMETER_LENGTH-1);
+				splitParam[MAX_PARAMETER_LENGTH-1]='\0';
+			}
 		}
 
 		strncat(newparamName,splitParam,MAX_PARAMETER_LENGTH-1);
-		newparamName[MAX_PARAMETER_LENGTH]='\0';
+		newparamName[MAX_PARAMETER_LENGTH-1]='\0';
 		checkforParameterMatch(doc,newparamName,&Match,dataType);
 		free(newparamName);
 	}
