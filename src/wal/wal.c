@@ -769,7 +769,7 @@ const char* getWebPAConfig(WCFG_PARAM_NAME param)
 			break;
 
 		case WCFG_DEVICE_INTERFACE:
-			ret = getInterfaceNameFromConfig();  
+			ret = RDKV_WEBPA_CFG_DEVICE_INTERFACE;  
 			break;
 		case WCFG_DEVICE_MAC:
 			ret = RDKV_WEBPA_DEVICE_MAC;
