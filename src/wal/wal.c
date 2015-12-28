@@ -433,62 +433,51 @@ exit0:
 						goto exit1;
 					}
 					memset(parametervalArr[0][0]->name,0,sizeof(char)*MAX_PARAM_LENGTH);
+					parametervalArr[0][0]->value=malloc(sizeof(char)*MAX_PARAM_LENGTH);
+					if(parametervalArr[0][0]->value == NULL)
+					{
+						RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error allocating memory\n");
+						ret = WAL_FAILURE;
+						goto exit1;
+					}
+					memset(parametervalArr[0][0]->value,0,sizeof(char)*MAX_PARAM_LENGTH);
 					switch(Param.paramtype)
 					{
 						case hostIf_IntegerType:
-						case hostIf_UnsignedIntType:
-						case hostIf_UnsignedLongType:
-							parametervalArr[0][0]->value=malloc(sizeof(int));
-							if(parametervalArr[0][0]->value == NULL)
-							{
-								RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error allocating memory\n");
-								ret = WAL_FAILURE;
-								goto exit1;
-							}
-							int *ptrint = (int *)parametervalArr[0][0]->value;
-							*ptrint = *((int *)Param.paramValue);
-							RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"CMCSA:: GetParamInfo Param.paramvalue is %d\n",*((int *)parametervalArr[0][0]->value));
-							break;
 						case hostIf_BooleanType:
-							parametervalArr[0][0]->value=malloc(sizeof(bool));
-							if(parametervalArr[0][0]->value == NULL)
 							{
-								RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error allocating memory\n");
-								ret = WAL_FAILURE;
-								goto exit1;
-							}
-							bool *ptrbool = (bool *)parametervalArr[0][0]->value;
-							*ptrbool = *((bool *)Param.paramValue);
-							RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"CMCSA:: GetParamInfo Param.paramvalue is %d\n",*((bool *)parametervalArr[0][0]->value));
-							break;
-						case hostIf_StringType:
-							parametervalArr[0][0]->value=malloc(sizeof(char)*MAX_PARAM_LENGTH);
-							if(parametervalArr[0][0]->value == NULL)
-							{
-								RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error allocating memory\n");
-								ret = WAL_FAILURE;
-								goto exit1;
-							}
-							memset(parametervalArr[0][0]->value,0,sizeof(char)*MAX_PARAM_LENGTH);
 							char *ptrtovalue = parametervalArr[0][0]->value;
-							strncpy(ptrtovalue,Param.paramValue,MAX_PARAM_LENGTH-1 );
+							snprintf(ptrtovalue,MAX_PARAM_LENGTH-1,"%d",*((int *)Param.paramValue));
 							ptrtovalue[MAX_PARAM_LENGTH-1] = '\0';
-							RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"CMCSA:: GetParamInfo value is %s ptrtovalue %s\n",parametervalArr[0][0]->value,ptrtovalue);
+							RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"CMCSA:: GetParamInfo value is %s\n",parametervalArr[0][0]->value);
 							break;
-						default: // handle as string
-							parametervalArr[0][0]->value=malloc(sizeof(char) * MAX_PARAM_LENGTH);
-							if(parametervalArr[0][0]->value == NULL)
-							{
-								RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error allocating memory\n");
-								ret = WAL_FAILURE;
-								goto exit1;
 							}
-							memset(parametervalArr[0][0]->value,0,sizeof(char) * MAX_PARAM_LENGTH);
+						case hostIf_UnsignedIntType:
+                                                        snprintf(parametervalArr[0][0]->value,MAX_PARAM_LENGTH-1,"%u",*((unsigned int *)Param.paramValue));
+                                                        parametervalArr[0][0]->value[MAX_PARAM_LENGTH-1] = '\0';
+                                                        RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"CMCSA:: GetParamInfo value is %s\n",parametervalArr[0][0]->value);
+                                                        break;
+						case hostIf_UnsignedLongType:
+                                                        snprintf(parametervalArr[0][0]->value,MAX_PARAM_LENGTH-1,"%u",*((unsigned long *)Param.paramValue));
+                                                        parametervalArr[0][0]->value[MAX_PARAM_LENGTH-1] = '\0';
+                                                        RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"CMCSA:: GetParamInfo value is %s\n",parametervalArr[0][0]->value);
+                                                        break;
+						case hostIf_StringType:
+							{
+							char *pValue = parametervalArr[0][0]->value;
+							strncpy(pValue,Param.paramValue,MAX_PARAM_LENGTH-1 );
+							pValue[MAX_PARAM_LENGTH-1] = '\0';
+							RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"CMCSA:: GetParamInfo value is %s ptrtovalue %s\n",parametervalArr[0][0]->value,pValue);
+							break;
+							}
+						default: // handle as string
+							{
 							char *ptrtodefvalue = parametervalArr[0][0]->value;
 							strncpy(ptrtodefvalue,Param.paramValue, MAX_PARAM_LENGTH-1);
 							ptrtodefvalue[MAX_PARAM_LENGTH-1] = '\0';
 							RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"CMCSA:: GetParamInfo value is %s\n",parametervalArr[0][0]->value);
 							break;
+							}
 					}
 					char *ptrtoname = parametervalArr[0][0]->name;
 					strncpy(ptrtoname,Param.paramName, MAX_PARAM_LENGTH-1);
