@@ -215,6 +215,7 @@ static void checkforParameterMatch(TiXmlNode *pParent,char *paramName,int *pMatc
 int isParameterValid(void *dbhandle,char *paramName,char *dataType)
 {
 	int Match = 0;
+	int first_i = 0;
 	TiXmlDocument *doc = (TiXmlDocument *) dbhandle;
 
 	/* Check if Parameter is one of {i} entriesi ex:Device.WiFi.Radio.1.Status should become Device.WiFi.Radio.{i}.Status */
@@ -226,6 +227,7 @@ int isParameterValid(void *dbhandle,char *paramName,char *dataType)
         	checkforParameterMatch(doc,paramName,&Match,dataType);
         	if(Match)
             		return true;
+		first_i = found+1;
 		char *newparamName =(char *) malloc(sizeof(char) * MAX_PARAMETER_LENGTH);
 		char splitParam[MAX_PARAMETER_LENGTH] = "{i}";
 		if(paramName[found+1] == '.')
@@ -234,6 +236,12 @@ int isParameterValid(void *dbhandle,char *paramName,char *dataType)
 			newparamName[found]='\0';
 			strncat(splitParam,str.substr(found+1).data(),MAX_PARAMETER_LENGTH-1);
 			splitParam[MAX_PARAMETER_LENGTH-1]='\0';
+		        // Check for Parameter Match with first {i}
+		        strncat(newparamName,splitParam,MAX_PARAMETER_LENGTH-1);
+		        newparamName[MAX_PARAMETER_LENGTH-1]='\0';
+		        checkforParameterMatch(doc,newparamName,&Match,dataType);
+		        if(Match)
+       			     return true;
 		}
 		else
 		{
@@ -248,15 +256,46 @@ int isParameterValid(void *dbhandle,char *paramName,char *dataType)
 		std::size_t found = str.find_first_of("0123456789");
 		if(found != std::string::npos)
 		{
+			strncpy(newparamName,paramName,first_i);
+            		newparamName[first_i] = '\0';
+
                		if(splitParam[found+1]=='.')
                 	{
 				splitParam[found]='\0';
 				strcat(splitParam,"{i}");
 				strncat(splitParam,str.substr(found+1).data(),MAX_PARAMETER_LENGTH-1);
 				splitParam[MAX_PARAMETER_LENGTH-1]='\0';
+
+			        strncat(newparamName,splitParam+3,MAX_PARAMETER_LENGTH-1);
+            			newparamName[MAX_PARAMETER_LENGTH-1]='\0';
+            			checkforParameterMatch(doc,newparamName,&Match,dataType);
+            			if(Match)
+               				return true;
+			}
+			else
+			{
+		                /* Find if there are more {i} entries */
+		                int first_num = found;
+		                std::string str(splitParam+first_num+1);
+		                std::size_t found = str.find_first_of("0123456789");
+		                if(found != std::string::npos)
+		                {
+		                    splitParam[found+first_num]='\0';
+		                    strcat(splitParam,".{i}");
+		                    strncat(splitParam,str.substr(found+1).data(),MAX_PARAMETER_LENGTH-1);
+		                    splitParam[MAX_PARAMETER_LENGTH-1]='\0';
+		                    //Check for parameter match with second {i}
+		                    strncat(newparamName,splitParam+3,MAX_PARAMETER_LENGTH-1);
+		                    newparamName[MAX_PARAMETER_LENGTH-1]='\0';
+		                    checkforParameterMatch(doc,newparamName,&Match,dataType);
+		                    if(Match)
+		                        return true;
+				}
 			}
 		}
 
+		if(first_i)
+	        	newparamName[first_i-1]='\0';	
 		strncat(newparamName,splitParam,MAX_PARAMETER_LENGTH-1);
 		newparamName[MAX_PARAMETER_LENGTH-1]='\0';
 		checkforParameterMatch(doc,newparamName,&Match,dataType);
