@@ -7,6 +7,7 @@ typedef unsigned int bool;
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include "rdk_debug.h"
 
 #define MAX_NUM_PARAMETERS 2048
@@ -16,7 +17,9 @@ typedef unsigned int bool;
 /* WebPA Configuration for RDKV */
 #define RDKV_WEBPA_COMPONENT_NAME            "webpaagent"
 #define RDKV_WEBPA_CFG_FILE                  "/etc/webpa_cfg.json"
+#define RDKV_WEBPA_CFG_FILE_OVERRIDE         "/opt/webpa_cfg.json"
 #define RDKV_WEBPA_CFG_FILE_SRC              "/etc/webpa_cfg.json"
+#define RDKV_WEBPA_CFG_FILE_SRC_OVERRIDE     "/opt/webpa_cfg.json"
 #define RDKV_WEBPA_CFG_DEVICE_INTERFACE      "eth1"
 #define RDKV_WEBPA_DEVICE_MAC                "Device.DeviceInfo.X_COMCAST-COM_STB_MAC"
 #define RDKV_XPC_SYNC_PARAM_CID              "not.defined"
@@ -750,11 +753,26 @@ const char* getWebPAConfig(WCFG_PARAM_NAME param)
 			break;
 
 		case WCFG_CFG_FILE:
-			ret = RDKV_WEBPA_CFG_FILE;
+                        if (access(RDKV_WEBPA_CFG_FILE_OVERRIDE, F_OK) != -1)
+                        {
+                                ret = RDKV_WEBPA_CFG_FILE_OVERRIDE;
+                        }
+                        else
+                        {
+                                ret = RDKV_WEBPA_CFG_FILE;
+                        }
 			break;
 
 		case WCFG_CFG_FILE_SRC:
-			ret = RDKV_WEBPA_CFG_FILE_SRC;
+                        if (access(RDKV_WEBPA_CFG_FILE_SRC_OVERRIDE, F_OK) != -1)
+                        {
+                                ret = RDKV_WEBPA_CFG_FILE_SRC_OVERRIDE;
+                        }
+                        else
+                        {
+                                ret = RDKV_WEBPA_CFG_FILE_SRC;
+                        }
+
 			break;
 
 		case WCFG_DEVICE_INTERFACE:
