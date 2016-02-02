@@ -164,9 +164,17 @@ static void checkforParameterMatch(TiXmlNode *pParent,char *paramName,int *pMatc
 			std::string *str1 = new std::string(paramName);
 			std::size_t found = str1->find_last_of(".");
 			char *paramObject = (char *) malloc(sizeof(char) * MAX_PARAMETER_LENGTH);
-			strncpy(paramObject,paramName,found);
-			paramObject[found]='.';
-			paramObject[found+1]='\0';
+			if(found != std::string::npos)
+			{
+				strncpy(paramObject,paramName,found);
+				paramObject[found]='.';
+				paramObject[found+1]='\0';
+			}
+			else
+			{
+				strncpy(paramObject,paramName,MAX_PARAMETER_LENGTH-1);
+				paramObject[MAX_PARAMETER_LENGTH] = '\0';
+			}
 
 			free(str1);
 			if(!strcmp(pAttrib->Value(),paramObject))
