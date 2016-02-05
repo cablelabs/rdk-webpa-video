@@ -812,12 +812,12 @@ WAL_STATUS sendIoTMessage(const void *msg)
 	//TODO: Implement sendIoTMessage fn
 }
 
-void addRowTable(const char *objectName,TableData *list,char *retObject, WAL_STATUS *retStatus)
+void addRowTable(const char *objectName,TableData *list,char **retObject, WAL_STATUS *retStatus)
 {
 	// TODO: Implement ADD row API for TR181 dynamic table objects
 }
 
-void deleteRowTable(const char *paramName,WAL_STATUS *retStatus)
+void deleteRowTable(const char *object,WAL_STATUS *retStatus)
 {
 	// TODO: Implement DELETE row API for TR181 dynamic table objects
 }
