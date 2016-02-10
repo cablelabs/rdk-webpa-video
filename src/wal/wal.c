@@ -25,7 +25,9 @@ typedef unsigned int bool;
 #define RDKV_XPC_SYNC_PARAM_CID              "not.defined"
 #define RDKV_XPC_SYNC_PARAM_CMC              "not.defined"
 #define RDKV_XPC_SYNC_PARAM_SPV              "not.defined"
-#define STR_NOT_DEFINED                      "Not Defined"
+#define RDKV_FIRMWARE_VERSION                "Device.DeviceInfo.X_COMCAST-COM_FirmwareFilename"
+#define RDKV_DEVICE_UP_TIME                  "Device.DeviceInfo.UpTime"
+#define STR_NOT_DEFINED                      "not.defined"
 #define LOG_MOD_WEBPA                        "LOG.RDK.WEBPAVIDEO"
 
 static int get_ParamValues_tr69hostIf(HOSTIF_MsgData_t *param);
@@ -110,7 +112,7 @@ void getValues(const char *paramName[], const unsigned int paramCount, ParamVal 
 	for (cnt = 0; cnt < paramCount; cnt++) {
 		retStatus[cnt] = GetParamInfo(paramName[cnt], &paramValArr[cnt],&numParams);
 		retValCount[cnt]=numParams;
-		RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"Parameter Name: %s, Parameter Value: %s return: %d\n",paramName[cnt],(paramValArr[cnt][0])->value,retStatus[cnt]);
+		RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"Parameter Name: %s return: %d\n",paramName[cnt],retStatus[cnt]);
 	}
 }
 
@@ -794,6 +796,13 @@ const char* getWebPAConfig(WCFG_PARAM_NAME param)
 			ret = RDKV_XPC_SYNC_PARAM_SPV;
 			break;
 
+                case WCFG_FIRMWARE_VERSION:
+                        ret = RDKV_FIRMWARE_VERSION;
+                        break;
+
+                case WCFG_DEVICE_UP_TIME:
+                        ret = RDKV_DEVICE_UP_TIME;
+                        break;
 		default:
 			ret = STR_NOT_DEFINED;
 	}
