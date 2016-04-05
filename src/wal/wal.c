@@ -209,17 +209,16 @@ static void  _tr69Event_handler(const char *owner, IARM_Bus_tr69HostIfMgr_EventI
 //    	paramNotify->changeSource = mapWriteID(val->writeID);
 			break;
 		default:
-			break;
+                	free(paramNotify);
+			return;
 		}
 	}
 
-	if(paramNotify->oldValue != NULL || paramNotify->newValue!= NULL) {
-	    RDK_LOG(RDK_LOG_INFO,LOG_MOD_WEBPA,"Notification Event from stack: Parameter Name: %s, Old Value: %s, New Value: %s, Data Type: %d, Write ID: %d\n", paramNotify->paramName, paramNotify->oldValue, paramNotify->newValue, paramNotify->type, paramNotify->changeSource);
+	RDK_LOG(RDK_LOG_INFO,LOG_MOD_WEBPA,"Notification Event from stack: Parameter Name: %s, Old Value: %s, New Value: %s, Data Type: %d, Write ID: %d\n", paramNotify->paramName, paramNotify->oldValue, paramNotify->newValue, paramNotify->type, paramNotify->changeSource);
 
-	    if(notifyCbFn != NULL)
-	    {
-		(*notifyCbFn)(paramNotify);
-	    }
+	if(notifyCbFn != NULL)
+	{
+	(*notifyCbFn)(paramNotify);
 	}
 }
 /**
