@@ -36,13 +36,11 @@ static int set_ParamValues_tr69hostIf (HOSTIF_MsgData_t param);
 static int SetParamInfo(ParamVal paramVal);
 static int getParamAttributes(const char *pParameterName, AttrVal ***attr, int *TotalParams);
 static int setParamAttributes(const char *pParameterName, const AttrVal *attArr);
-static void  _tr69Event_handler(const char *owner, IARM_Bus_tr69HostIfMgr_EventId_t eventId, void *data, size_t len);
 
 static void converttohostIfType(char *ParamDataType,HostIf_ParamType_t* pParamType);
 static void converttoWalType(HostIf_ParamType_t paramType,DATA_TYPE* walType);
 
 static int g_dbhandle = 0;
-void (*notifyCbFn)(ParamNotify*) = NULL;
 
 static void converttohostIfType(char *ParamDataType,HostIf_ParamType_t* pParamType)
 {
@@ -141,14 +139,6 @@ WAL_STATUS msgBusInit(const char *name)
 		return WAL_FAILURE;
 	}
 
-	/* Register for IARM Events */
-	IARM_Bus_RegisterEventHandler(IARM_BUS_TR69HOSTIFMGR_NAME, IARM_BUS_TR69HOSTIFMGR_EVENT_ADD, _tr69Event_handler);
-	IARM_Bus_RegisterEventHandler(IARM_BUS_TR69HOSTIFMGR_NAME, IARM_BUS_TR69HOSTIFMGR_EVENT_REMOVE, _tr69Event_handler);
-	IARM_Bus_RegisterEventHandler(IARM_BUS_TR69HOSTIFMGR_NAME, IARM_BUS_TR69HOSTIFMGR_EVENT_VALUECHANGED, _tr69Event_handler);
-	/* Register call for notify events */
-	IARM_Bus_RegisterEvent(1);
-
-
 	// Load Document model
 	dbRet = loaddb("/etc/data-model.xml",(void *)&g_dbhandle);
 
@@ -159,68 +149,6 @@ WAL_STATUS msgBusInit(const char *name)
 	}
 }
 
-static void  _tr69Event_handler(const char *owner, IARM_Bus_tr69HostIfMgr_EventId_t eventId, void *data, size_t len)
-{
-	IARM_Bus_tr69HostIfMgr_EventData_t *tr69EventData = (IARM_Bus_tr69HostIfMgr_EventData_t *)data;
-	ParamNotify *paramNotify = NULL;
-	paramNotify = (ParamNotify *) malloc(sizeof(ParamNotify));
-	if(paramNotify == NULL)
-		return;
-	memset(paramNotify,0,sizeof(ParamNotify));
-
-	if (0 == strcmp(owner, IARM_BUS_TR69HOSTIFMGR_NAME))
-	{
-		switch (eventId)
-		{
-		case IARM_BUS_TR69HOSTIFMGR_EVENT_ADD:
-			if(tr69EventData->paramName)
-			{
-				paramNotify->paramName = tr69EventData->paramName;
-			}
-			if(tr69EventData->paramValue)
-			{
-				paramNotify->newValue = tr69EventData->paramValue;
-			}
-			//paramNotify->oldValue= val->oldValue;
-			converttoWalType(tr69EventData->paramtype,&(paramNotify->type));
-			break;
-		case IARM_BUS_TR69HOSTIFMGR_EVENT_REMOVE:
-			if(tr69EventData->paramName)
-			{
-				paramNotify->paramName = tr69EventData->paramName;
-			}
-			if(tr69EventData->paramValue)
-			{
-				paramNotify->newValue = tr69EventData->paramValue;
-			}
-			//paramNotify->oldValue= val->oldValue;
-			converttoWalType(tr69EventData->paramtype,&(paramNotify->type));
-			break;
-		case IARM_BUS_TR69HOSTIFMGR_EVENT_VALUECHANGED:
-			if(tr69EventData->paramName)
-			{
-				paramNotify->paramName = tr69EventData->paramName;
-			}
-			if(tr69EventData->paramValue)
-			{
-				paramNotify->newValue = tr69EventData->paramValue;
-			}
-			converttoWalType(tr69EventData->paramtype,&(paramNotify->type));
-//    	paramNotify->changeSource = mapWriteID(val->writeID);
-			break;
-		default:
-                	free(paramNotify);
-			return;
-		}
-	}
-
-	RDK_LOG(RDK_LOG_INFO,LOG_MOD_WEBPA,"Notification Event from stack: Parameter Name: %s, Old Value: %s, New Value: %s, Data Type: %d, Write ID: %d\n", paramNotify->paramName, paramNotify->oldValue, paramNotify->newValue, paramNotify->type, paramNotify->changeSource);
-
-	if(notifyCbFn != NULL)
-	{
-	(*notifyCbFn)(paramNotify);
-	}
-}
 /**
  * @brief Registers the notification callback function.
  *
@@ -229,7 +157,7 @@ static void  _tr69Event_handler(const char *owner, IARM_Bus_tr69HostIfMgr_EventI
  */
 WAL_STATUS RegisterNotifyCB(notifyCB cb)
 {
-	notifyCbFn = cb;
+	//TODO
 	return WAL_SUCCESS;
 }
 
