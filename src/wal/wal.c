@@ -763,6 +763,15 @@ void replaceTable(const char *objectName,TableData * list,int paramcount,WAL_STA
 	// TODO: Implement REPLACE table (DELETE and ADD) API for TR181 dynamic table objects
 }
 
+void WALInit()
+{
+	// TODO: Implement any initialization required for webpa
+}
+
+void waitForReadyCondition()
+{
+	// TODO: Implement wait for any dependent components for webpa to be ready
+}
 
 /* int main ( int arc, char **argv )
 {
