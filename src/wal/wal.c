@@ -768,9 +768,14 @@ void WALInit()
 	// TODO: Implement any initialization required for webpa
 }
 
-void waitForReadyCondition()
+void waitForConnectReadyCondition()
 {
-	// TODO: Implement wait for any dependent components for webpa to be ready
+	// TODO: Implement wait for any dependent components for webpa to be ready to connect to server
+}
+
+void waitForOperationalReadyCondition()
+{
+	// TODO: Implement wait for any dependent components for webpa to be operational
 }
 
 /* int main ( int arc, char **argv )
