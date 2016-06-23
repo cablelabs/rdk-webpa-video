@@ -113,7 +113,7 @@ static void sig_handler(int sig)
 	}
 #endif
         if( sig == SIGTERM ) {
-                terminateSocketConnection(sig);
+                terminateSocketConnection();
         }
 
         signal(sig, SIG_DFL );
