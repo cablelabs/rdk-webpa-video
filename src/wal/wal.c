@@ -468,7 +468,7 @@ exit1:
  * @param[in] paramCount Number of parameters.
  * @param[out] retStatus List of Return status.
  */
-void setValues(const ParamVal paramVal[], const unsigned int paramCount, const unsigned int isAtomic, WAL_STATUS *retStatus)
+void setValues(const ParamVal paramVal[], const unsigned int paramCount, const unsigned int isAtomic, WAL_STATUS *retStatus,char * transaction_id)
 //void setValues(const ParamVal paramVal[], int paramCount, WAL_STATUS *retStatus)
 {
 	int cnt=0;

@@ -88,7 +88,7 @@ else if(!strcmp(argv[1],"set")) /*Test setvalues*/
 	strcpy(paramvalArr[i].value,"up"); 
 	paramvalArr[i].type = WAL_STRING;
     }
-    setValues(paramvalArr,paramCount,0,ret);
+    setValues(paramvalArr,paramCount,0,ret,NULL);
 }
 else
 {
