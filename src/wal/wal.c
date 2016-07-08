@@ -778,6 +778,11 @@ void waitForOperationalReadyCondition()
 	// TODO: Implement wait for any dependent components for webpa to be operational
 }
 
+void getNotifyParamList(const char ***paramList,int *size)
+{
+	//TODO: Implement Initial webpa notification SET if required
+}
+
 /* int main ( int arc, char **argv )
 {
 	// TODO:Implement main
