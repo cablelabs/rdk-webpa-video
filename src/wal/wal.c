@@ -102,7 +102,7 @@ static void converttoWalType(HostIf_ParamType_t paramType,DATA_TYPE* pwalType)
  * for wildcards request where it represents the number of param/value pairs retrieved for the particular wildcard parameter.
  * @param[out] retStatus List of Return status.
  */
-void getValues(const char *paramName[], const unsigned int paramCount, ParamVal ***paramValArr, int *retValCount, WAL_STATUS *retStatus)
+void getValues(const char *paramName[], const unsigned int paramCount, money_trace_spans *timeSpan, ParamVal ***paramValArr, int *retValCount, WAL_STATUS *retStatus)
 //void getValues(const char *paramName[], int paramCount, ParamVal ***paramValArr, int *retValCount, WAL_STATUS *retStatus)
 {
 	int cnt = 0;
@@ -468,7 +468,7 @@ exit1:
  * @param[in] paramCount Number of parameters.
  * @param[out] retStatus List of Return status.
  */
-void setValues(const ParamVal paramVal[], const unsigned int paramCount, const unsigned int isAtomic, WAL_STATUS *retStatus,char * transaction_id)
+void setValues(const ParamVal paramVal[], const unsigned int paramCount, const unsigned int isAtomic, money_trace_spans *timeSpan, WAL_STATUS *retStatus,char * transaction_id)
 //void setValues(const ParamVal paramVal[], int paramCount, WAL_STATUS *retStatus)
 {
 	int cnt=0;
@@ -553,7 +553,7 @@ static int SetParamInfo(ParamVal paramVal)
  * @param[out] retAttrCount List of "number of attributes" for each input paramName.
  * @param[out] retStatus List of Return status.
  */
-void getAttributes(const char *paramName[], const unsigned int paramCount, AttrVal ***attr, int *retAttrCount, WAL_STATUS *retStatus)
+void getAttributes(const char *paramName[], const unsigned int paramCount, money_trace_spans *timeSpan, AttrVal ***attr, int *retAttrCount, WAL_STATUS *retStatus)
 //void getAttributes(const char *paramName[], int paramCount, AttrVal ***attr, int *retAttrCount, WAL_STATUS *retStatus)
 {
 	int cnt=0;
@@ -578,7 +578,7 @@ static int getParamAttributes(const char *pParameterName, AttrVal ***attr, int *
  * @param[in] attr List of attribute name/value pairs.
  * @param[out] retStatus List of Return status.
  */
-void setAttributes(const char *paramName[], const unsigned int paramCount, const AttrVal *attr[], WAL_STATUS *retStatus)
+void setAttributes(const char *paramName[], const unsigned int paramCount, money_trace_spans *timeSpan, const AttrVal *attr[], WAL_STATUS *retStatus)
 //void setAttributes(const char *paramName[], int paramCount, const AttrVal *attr[], WAL_STATUS *retStatus)
 {
 	int cnt=0;

@@ -49,7 +49,7 @@ if(!strcmp(argv[1],"get"))
 {
 int *count = (int *) malloc(sizeof(int) * paramCount);
 ParamVal ***parametervalArr = (ParamVal ***) malloc( sizeof(ParamVal **) * paramCount);
-getValues((const char **)getParamList, paramCount, parametervalArr, count, ret);
+getValues((const char **)getParamList, paramCount, NULL, parametervalArr, count, ret);
 for(i=0;i<paramCount;i++)
 {
 	if(ret[i] == WAL_SUCCESS)
@@ -88,7 +88,7 @@ else if(!strcmp(argv[1],"set")) /*Test setvalues*/
 	strcpy(paramvalArr[i].value,"up"); 
 	paramvalArr[i].type = WAL_STRING;
     }
-    setValues(paramvalArr,paramCount,0,ret,NULL);
+    setValues(paramvalArr,paramCount,0, NULL,ret,NULL);
 }
 else
 {
