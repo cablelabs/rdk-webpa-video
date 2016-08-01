@@ -39,7 +39,7 @@ static int setParamAttributes(const char *pParameterName, const AttrVal *attArr)
 
 static void converttohostIfType(char *ParamDataType,HostIf_ParamType_t* pParamType);
 static void converttoWalType(HostIf_ParamType_t paramType,DATA_TYPE* walType);
-
+static char *get_NetworkIfName(void);
 static int g_dbhandle = 0;
 
 static void converttohostIfType(char *ParamDataType,HostIf_ParamType_t* pParamType)
@@ -705,7 +705,7 @@ const char* getWebPAConfig(WCFG_PARAM_NAME param)
 			break;
 
 		case WCFG_DEVICE_INTERFACE:
-			ret = RDKV_WEBPA_CFG_DEVICE_INTERFACE;  
+			ret = get_NetworkIfName();
 			break;
 		case WCFG_DEVICE_MAC:
 			ret = RDKV_WEBPA_DEVICE_MAC;
@@ -789,3 +789,19 @@ void getNotifyParamList(const char ***paramList,int *size)
 	return 0;
 }
 */
+
+/* Get network interface from device properties */
+char *get_NetworkIfName( void )
+{
+    static char *curIfName = NULL;
+    RDK_LOG(RDK_LOG_TRACE1, LOG_MOD_WEBPA,"[%s] Enter %s\n", __FUNCTION__);
+    if (!curIfName)
+    {
+	curIfName = ((access( "/tmp/wifi-on", F_OK ) != 0 ) ? getenv("MOCA_INTERFACE") : getenv("WIFI_INTERFACE"));
+	RDK_LOG(RDK_LOG_DEBUG ,LOG_MOD_WEBPA," [%s] Interface Name : %s\n", __FUNCTION__, curIfName);
+    }
+
+    RDK_LOG(RDK_LOG_TRACE1, LOG_MOD_WEBPA,"[%s]Exit %s\n", __FUNCTION__);
+    return curIfName;
+}
+
