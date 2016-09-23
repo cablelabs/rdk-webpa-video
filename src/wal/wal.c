@@ -20,7 +20,7 @@ typedef unsigned int bool;
 #define RDKV_WEBPA_CFG_FILE_OVERRIDE         "/opt/webpa_cfg.json"
 #define RDKV_WEBPA_CFG_FILE_SRC              "/etc/webpa_cfg.json"
 #define RDKV_WEBPA_CFG_FILE_SRC_OVERRIDE     "/opt/webpa_cfg.json"
-#define RDKV_WEBPA_CFG_DEVICE_INTERFACE      "eth1"
+#define RDKV_WEBPA_CFG_DEVICE_INTERFACE      "not.defined"
 #define RDKV_WEBPA_DEVICE_MAC                "Device.DeviceInfo.X_COMCAST-COM_STB_MAC"
 #define RDKV_XPC_SYNC_PARAM_CID              "not.defined"
 #define RDKV_XPC_SYNC_PARAM_CMC              "not.defined"
@@ -39,7 +39,7 @@ static int setParamAttributes(const char *pParameterName, const AttrVal *attArr)
 
 static void converttohostIfType(char *ParamDataType,HostIf_ParamType_t* pParamType);
 static void converttoWalType(HostIf_ParamType_t paramType,DATA_TYPE* walType);
-static char *get_NetworkIfName(void);
+//static char *get_NetworkIfName(void);
 static int g_dbhandle = 0;
 
 static void converttohostIfType(char *ParamDataType,HostIf_ParamType_t* pParamType)
@@ -705,7 +705,8 @@ const char* getWebPAConfig(WCFG_PARAM_NAME param)
 			break;
 
 		case WCFG_DEVICE_INTERFACE:
-			ret = get_NetworkIfName();
+		        RDK_LOG(RDK_LOG_INFO, LOG_MOD_WEBPA,"[%s] The WCFG_DEVICE_INTERFACE: %s\n", __FUNCTION__, STR_NOT_DEFINED);
+			ret = STR_NOT_DEFINED;
 			break;
 		case WCFG_DEVICE_MAC:
 			ret = RDKV_WEBPA_DEVICE_MAC;
@@ -791,6 +792,7 @@ void getNotifyParamList(const char ***paramList,int *size)
 */
 
 /* Get network interface from device properties */
+#if 0
 char *get_NetworkIfName( void )
 {
     static char *curIfName = NULL;
@@ -804,4 +806,4 @@ char *get_NetworkIfName( void )
     RDK_LOG(RDK_LOG_TRACE1, LOG_MOD_WEBPA,"[%s]Exit %s\n", __FUNCTION__);
     return curIfName;
 }
-
+#endif
