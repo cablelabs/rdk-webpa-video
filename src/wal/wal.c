@@ -530,8 +530,28 @@ static int SetParamInfo(ParamVal paramVal)
 
 		strncpy(Param.paramName, paramVal.name,MAX_PARAM_LENGTH-1);
 		Param.paramName[MAX_PARAM_LENGTH-1]='\0';
-		strncpy(Param.paramValue, paramVal.value,MAX_PARAM_LENGTH-1);
-		Param.paramValue[MAX_PARAM_LENGTH-1]='\0';
+
+		if (Param.paramtype == hostIf_BooleanType)
+		{
+		    bool* boolPtr = (bool*) Param.paramValue;
+		    if (strcmp (paramVal.value, "1") == 0 || strcasecmp (paramVal.value, "true") == 0)
+		    {
+		        *boolPtr = 1;
+		    }
+		    else if (strcmp (paramVal.value, "0") == 0 || strcasecmp (paramVal.value, "false") == 0)
+		    {
+		        *boolPtr = 0;
+		    }
+		    else
+		    {
+		        return WAL_ERR_INVALID_PARAMETER_VALUE;
+		    }
+		}
+		else
+		{
+		    strncpy(Param.paramValue, paramVal.value,MAX_PARAM_LENGTH-1);
+		    Param.paramValue[MAX_PARAM_LENGTH-1]='\0';
+		}
 
 		ret = set_ParamValues_tr69hostIf(Param);
 		RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"set_ParamValues_tr69hostIf %d\n",ret);
