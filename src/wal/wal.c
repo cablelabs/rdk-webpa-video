@@ -31,7 +31,7 @@ typedef unsigned int bool;
 #define LOG_MOD_WEBPA                        "LOG.RDK.WEBPAVIDEO"
 
 static int get_ParamValues_tr69hostIf(HOSTIF_MsgData_t *param);
-static int GetParamInfo(const char *pParameterName, ParamVal ***parametervalArr,int *TotalParams);
+static int GetParamInfo (const char *pParameterName, ParamVal **parametervalPtrPtr, int *paramCountPtr);
 static int set_ParamValues_tr69hostIf (HOSTIF_MsgData_t param);
 static int SetParamInfo(ParamVal paramVal);
 static int getParamAttributes(const char *pParameterName, AttrVal ***attr, int *TotalParams);
@@ -102,16 +102,26 @@ static void converttoWalType(HostIf_ParamType_t paramType,DATA_TYPE* pwalType)
  * for wildcards request where it represents the number of param/value pairs retrieved for the particular wildcard parameter.
  * @param[out] retStatus List of Return status.
  */
-void getValues(const char *paramName[], const unsigned int paramCount, money_trace_spans *timeSpan, ParamVal ***paramValArr, int *retValCount, WAL_STATUS *retStatus)
-//void getValues(const char *paramName[], int paramCount, ParamVal ***paramValArr, int *retValCount, WAL_STATUS *retStatus)
+void getValues (const char *paramName[], const unsigned int paramCount, money_trace_spans *timeSpan, ParamVal ***paramValArr,
+        int *retValCount, WAL_STATUS *retStatus)
 {
-	int cnt = 0;
-	int numParams = 0;
-	for (cnt = 0; cnt < paramCount; cnt++) {
-		retStatus[cnt] = GetParamInfo(paramName[cnt], &paramValArr[cnt],&numParams);
-		retValCount[cnt]=numParams;
-		RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"Parameter Name: %s return: %d\n",paramName[cnt],retStatus[cnt]);
-	}
+    // Generic code mallocs paramValArr to hold paramCount items but only paramValArr[0] is ever accessed.
+
+    // Generic code uses "paramValArr[0][cnt2]" (iterating over the 2nd dimension instead of the 1st). This means
+    // paramValArr[0] (which is of type "ParamVal**") is expected to point to an array of "ParamVal*" objects
+    paramValArr[0] = calloc (paramCount, sizeof(ParamVal*));
+
+    int cnt = 0;
+    int numParams = 0;
+    for (cnt = 0; cnt < paramCount; cnt++)
+    {
+        // Because GetParamInfo is responsible for producing results (including wildcard explansion) for only 1 input
+        // parameter, the address of the correct "ParamVal*" object from the above allocated array has to be given to
+        // GetParamInfo for initialization. So GetParamInfo has to take a "ParamVal**" as input.
+        retStatus[cnt] = GetParamInfo (paramName[cnt], &paramValArr[0][cnt], &numParams);
+        retValCount[cnt] = numParams;
+        RDK_LOG (RDK_LOG_DEBUG, LOG_MOD_WEBPA, "Parameter Name: %s return: %d\n", paramName[cnt], retStatus[cnt]);
+    }
 }
 
 /**
@@ -185,280 +195,207 @@ static int get_ParamValues_tr69hostIf(HOSTIF_MsgData_t *ptrParam)
 	return WAL_SUCCESS;
 }
 
-
-static int GetParamInfo(const char *pParameterName, ParamVal ***parametervalArr,int *TotalParams)
+static int GetParamInfo (const char *pParameterName, ParamVal **parametervalPtrPtr, int *paramCountPtr)
 {
-	//Check if pParameterName is in the tree and convert to a list if a wildcard/branch
-	const char wcard = '*'; // TODO: Currently support only wildcard character *
-	int i = 0;
-	int ret = WAL_FAILURE;
-	DB_STATUS dbRet = DB_FAILURE;
-	HOSTIF_MsgData_t Param = {0};
+    //Check if pParameterName is in the tree and convert to a list if a wildcard/branch
+    const char wcard = '*'; // TODO: Currently support only wildcard character *
+    int i = 0;
+    int ret = WAL_FAILURE;
+    DB_STATUS dbRet = DB_FAILURE;
+    HOSTIF_MsgData_t Param = { 0 };
 
-	if(g_dbhandle)
-	{
-		if(strchr(pParameterName,wcard))
-		{
-			char **getParamList = NULL;
-			char **ParamDataTypeList = NULL;
-			int paramCount = 0;
+    if (g_dbhandle)
+    {
+        ParamVal* parametervalPtr = NULL;
 
-			/* Translate wildcard to list of parameters */
-			getParamList = (char **) malloc(MAX_NUM_PARAMETERS * sizeof(char *));
-			if(getParamList!=NULL)
-			{
-				RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error allocating memory\n");
-				ret = WAL_FAILURE;
-				goto exit0;
-			}
-			ParamDataTypeList = (char **) malloc(MAX_NUM_PARAMETERS * sizeof(char *));
-			if(ParamDataTypeList==NULL)
-			{
-				RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error allocating memory\n");
-				ret = WAL_FAILURE;
-				goto exit0;
-			}
+        if (strchr (pParameterName, wcard))
+        {
+            /* Translate wildcard to list of parameters */
+            char **getParamList = (char**) calloc (MAX_NUM_PARAMETERS, sizeof(char*));
+            char **ParamDataTypeList = (char**) calloc (MAX_NUM_PARAMETERS, sizeof(char*));
+            if (getParamList == NULL || ParamDataTypeList == NULL)
+            {
+                RDK_LOG (RDK_LOG_ERROR, LOG_MOD_WEBPA, "Error allocating memory\n");
+                ret = WAL_FAILURE;
+                goto exit0;
+            }
 
-			dbRet = getParameterList((void *)g_dbhandle,pParameterName,getParamList,ParamDataTypeList,&paramCount);
-			*TotalParams = paramCount;
-			parametervalArr[0] = (ParamVal **) malloc(paramCount * sizeof(ParamVal*));
-			if(parametervalArr[0] == NULL)
-			{
-				RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error allocating memory\n");
-				ret = WAL_FAILURE;
-				goto exit0;
-			}
-				
-			memset(parametervalArr[0],0,paramCount * sizeof(ParamVal*));
+            *paramCountPtr = 0;
+            dbRet = getParameterList ((void *) g_dbhandle, pParameterName, getParamList, ParamDataTypeList, paramCountPtr);
 
-			for(i = 0; i < paramCount; i++)
-			{
-				RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"%s:%s\n",getParamList[i],ParamDataTypeList[i]);
-				strncpy(Param.paramName,getParamList[i],MAX_PARAM_LENGTH-1);
-				Param.paramName[MAX_PARAM_LENGTH-1]='\0';
+            // allocate parametervalPtr as an array of ParamVal elements (wildcard case)
+            parametervalPtr = (ParamVal*) calloc (*paramCountPtr, sizeof(ParamVal));
+            if (parametervalPtr == NULL)
+            {
+                RDK_LOG (RDK_LOG_ERROR, LOG_MOD_WEBPA, "Error allocating memory\n");
+                ret = WAL_FAILURE;
+                goto exit0;
+            }
 
-				// Convert ParamDataType to hostIf datatype
-				converttohostIfType(ParamDataTypeList[i],&(Param.paramtype));
-				Param.instanceNum = 0;
-				parametervalArr[0][i]=malloc(sizeof(ParamVal));
-				if(parametervalArr[0][i] == NULL)
-				{
-					RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error allocating memory\n");
-					ret = WAL_FAILURE;
-					goto exit0;
-				}
-				memset(parametervalArr[0][i],0,sizeof(ParamVal));
+            for (i = 0; i < *paramCountPtr; i++)
+            {
+                RDK_LOG (RDK_LOG_DEBUG, LOG_MOD_WEBPA, "%s:%s\n", getParamList[i], ParamDataTypeList[i]);
+                strncpy (Param.paramName, getParamList[i], MAX_PARAM_LENGTH - 1);
+                Param.paramName[MAX_PARAM_LENGTH - 1] = '\0';
 
-				// Convert Param.paramtype to ParamVal.type
-				converttoWalType(Param.paramtype,&(parametervalArr[0][i]->type));
+                // Convert ParamDataType to hostIf datatype
+                converttohostIfType (ParamDataTypeList[i], &(Param.paramtype));
+                Param.instanceNum = 0;
 
-				ret = get_ParamValues_tr69hostIf(&Param);
+                // Convert Param.paramtype to ParamVal.type
+                converttoWalType (Param.paramtype, &(parametervalPtr[i].type));
 
-				if(ret == WAL_SUCCESS)
-				{
-					parametervalArr[0][i]->name=malloc(MAX_PARAM_LENGTH);
-					char *ptrtoname = parametervalArr[0][i]->name;
-					if(ptrtoname == NULL)
-					{
-						RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error allocating memory\n");
-						ret = WAL_FAILURE;
-						goto exit0;
-					}
-					parametervalArr[0][i]->value=malloc(MAX_PARAM_LENGTH);
-					char *ptrtovalue = parametervalArr[0][i]->value;
-					if(ptrtovalue == NULL)
-					{
-						RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error allocating memory\n");
-						ret = WAL_FAILURE;
-						goto exit0;
-					}
-					strncpy(ptrtoname,Param.paramName, MAX_PARAM_LENGTH-1);
-					ptrtoname[MAX_PARAM_LENGTH-1] = '\0';
-					strncpy(ptrtovalue,Param.paramValue, MAX_PARAM_LENGTH-1);
-					ptrtovalue[MAX_PARAM_LENGTH-1] = '\0';
-				}
-				else
-				{
-					ret = WAL_FAILURE;
-				}
-				free(getParamList[i]);
-				free(ParamDataTypeList[i]);
-			}
+                ret = get_ParamValues_tr69hostIf (&Param);
+                if (ret == WAL_SUCCESS)
+                {
+                    parametervalPtr[i].name = (char*) calloc (MAX_PARAM_LENGTH, sizeof(char));
+                    parametervalPtr[i].value = (char*) calloc (MAX_PARAM_LENGTH, sizeof(char));
+                    if (parametervalPtr[i].name == NULL || parametervalPtr[i].value == NULL)
+                    {
+                        RDK_LOG (RDK_LOG_ERROR, LOG_MOD_WEBPA, "Error allocating memory\n");
+                        ret = WAL_FAILURE;
+                        goto exit0;
+                    }
+
+                    strncat (parametervalPtr[i].name, Param.paramName, MAX_PARAM_LENGTH - 1);
+                    strncat (parametervalPtr[i].value, Param.paramValue, MAX_PARAM_LENGTH - 1);
+                }
+                else
+                {
+                    ret = WAL_FAILURE;
+                }
+                free (getParamList[i]);
+                free (ParamDataTypeList[i]);
+            }
 exit0:
-			if(ret != WAL_SUCCESS) // For success case generic layer would free up parametervalArr after consuming data
-			{
-				int j;
-				for(j=0;j<i;j++)
-				{
-					if(parametervalArr[0][j]->name != NULL)
-					{
-						free(parametervalArr[0][j]->name);
-						parametervalArr[0][j]->name = NULL;
-					}
-					if(parametervalArr[0][j]->value != NULL)
-					{
-						free(parametervalArr[0][j]->value);
-						parametervalArr[0][j]->value = NULL;
-					}	
-					if(parametervalArr[0][j] != NULL)
-					{
-						free(parametervalArr[0][j]);
-						parametervalArr[0][j] = NULL;
-					}
-				}
-                		if(parametervalArr[0] != NULL)
-					free(parametervalArr[0]);
-			}
-			if(getParamList != NULL)
-				free(getParamList);
-			if(ParamDataTypeList!=NULL)
-				free(ParamDataTypeList);
-			return ret;
-		}
-		else /* No wildcard, check whether given parameter is valid */
-		{
-			char *dataType = malloc(sizeof(char) * MAX_DATATYPE_LENGTH);
-			if(dataType == NULL)
-			{
-				RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error allocating memory\n");
-				ret = WAL_FAILURE;
-				goto exit1;
-			}
-			parametervalArr[0] = (ParamVal **) malloc(sizeof(ParamVal*));
-			if(parametervalArr[0] == NULL)
-			{
-				RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error allocating memory\n");
-				ret = WAL_FAILURE;
-				goto exit1;
-			}
-			memset(parametervalArr[0],0,sizeof(ParamVal*));
-			parametervalArr[0][0]=malloc(sizeof(ParamVal));
-			if(parametervalArr[0][0] == NULL)
-			{
-				RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error allocating memory\n");
-				ret = WAL_FAILURE;
-				goto exit1;
-			}
-			parametervalArr[0][0]->name = NULL;
-			parametervalArr[0][0]->value = NULL;
-			parametervalArr[0][0]->type = 0;
+            // For success case generic layer would free up parametervalPtr after consuming data
+            if (ret != WAL_SUCCESS && parametervalPtr != NULL)
+            {
+                int j;
+                for (j = 0; j < i; j++)
+                {
+                    if (parametervalPtr[j].name != NULL)
+                    {
+                        free (parametervalPtr[j].name);
+                        parametervalPtr[j].name = NULL;
+                    }
+                    if (parametervalPtr[j].value != NULL)
+                    {
+                        free (parametervalPtr[j].value);
+                        parametervalPtr[j].value = NULL;
+                    }
+                }
+                free (parametervalPtr);
+                parametervalPtr = NULL;
+            }
+            if (getParamList != NULL)
+                free (getParamList);
+            if (ParamDataTypeList != NULL)
+                free (ParamDataTypeList);
+        }
+        else /* No wildcard, check whether given parameter is valid */
+        {
+            char *dataType = (char*) calloc (MAX_DATATYPE_LENGTH, sizeof(char));
+            if (dataType == NULL)
+            {
+                RDK_LOG (RDK_LOG_ERROR, LOG_MOD_WEBPA, "Error allocating memory\n");
+                ret = WAL_FAILURE;
+                goto exit1;
+            }
+            // allocate parametervalPtr as a single ParamVal element (the usual case)
+            parametervalPtr = (ParamVal*) calloc (1, sizeof(ParamVal));
+            if (parametervalPtr == NULL)
+            {
+                RDK_LOG (RDK_LOG_ERROR, LOG_MOD_WEBPA, "Error allocating memory\n");
+                ret = WAL_FAILURE;
+                goto exit1;
+            }
 
-			if(isParameterValid((void *)g_dbhandle,pParameterName,dataType))
-			{
-				*TotalParams = 1;
-				strncpy(Param.paramName,pParameterName,MAX_PARAM_LENGTH-1);
-				Param.paramName[MAX_PARAM_LENGTH-1]='\0';
-				converttohostIfType(dataType,&(Param.paramtype));
-				Param.instanceNum = 0;
-				// Convert Param.paramtype to ParamVal.type
-				RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"CMCSA:: GetParamInfo Param.paramtype is %d\n",Param.paramtype);
-				converttoWalType(Param.paramtype,&(parametervalArr[0][0]->type));
+            if (isParameterValid ((void *) g_dbhandle, pParameterName, dataType))
+            {
+                *paramCountPtr = 1;
+                strncpy (Param.paramName, pParameterName, MAX_PARAM_LENGTH - 1);
+                Param.paramName[MAX_PARAM_LENGTH - 1] = '\0';
 
-				ret = get_ParamValues_tr69hostIf(&Param);
-				if(ret == WAL_SUCCESS)
-				{
-					parametervalArr[0][0]->name=malloc(sizeof(char)*MAX_PARAM_LENGTH);
-					if(parametervalArr[0][0]->name == NULL)
-					{
-						RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error allocating memory\n");
-						ret = WAL_FAILURE;
-						goto exit1;
-					}
-					memset(parametervalArr[0][0]->name,0,sizeof(char)*MAX_PARAM_LENGTH);
-					parametervalArr[0][0]->value=malloc(sizeof(char)*MAX_PARAM_LENGTH);
-					if(parametervalArr[0][0]->value == NULL)
-					{
-						RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error allocating memory\n");
-						ret = WAL_FAILURE;
-						goto exit1;
-					}
-					memset(parametervalArr[0][0]->value,0,sizeof(char)*MAX_PARAM_LENGTH);
-					switch(Param.paramtype)
-					{
-						case hostIf_IntegerType:
-						case hostIf_BooleanType:
-							{
-							char *ptrtovalue = parametervalArr[0][0]->value;
-							snprintf(ptrtovalue,MAX_PARAM_LENGTH-1,"%d",*((int *)Param.paramValue));
-							ptrtovalue[MAX_PARAM_LENGTH-1] = '\0';
-							RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"CMCSA:: GetParamInfo value is %s\n",parametervalArr[0][0]->value);
-							break;
-							}
-						case hostIf_UnsignedIntType:
-                                                        snprintf(parametervalArr[0][0]->value,MAX_PARAM_LENGTH-1,"%u",*((unsigned int *)Param.paramValue));
-                                                        parametervalArr[0][0]->value[MAX_PARAM_LENGTH-1] = '\0';
-                                                        RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"CMCSA:: GetParamInfo value is %s\n",parametervalArr[0][0]->value);
-                                                        break;
-						case hostIf_UnsignedLongType:
-                                                        snprintf(parametervalArr[0][0]->value,MAX_PARAM_LENGTH-1,"%u",*((unsigned long *)Param.paramValue));
-                                                        parametervalArr[0][0]->value[MAX_PARAM_LENGTH-1] = '\0';
-                                                        RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"CMCSA:: GetParamInfo value is %s\n",parametervalArr[0][0]->value);
-                                                        break;
-						case hostIf_StringType:
-							{
-							char *pValue = parametervalArr[0][0]->value;
-							strncpy(pValue,Param.paramValue,MAX_PARAM_LENGTH-1 );
-							pValue[MAX_PARAM_LENGTH-1] = '\0';
-							RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"CMCSA:: GetParamInfo value is %s ptrtovalue %s\n",parametervalArr[0][0]->value,pValue);
-							break;
-							}
-						default: // handle as string
-							{
-							char *ptrtodefvalue = parametervalArr[0][0]->value;
-							strncpy(ptrtodefvalue,Param.paramValue, MAX_PARAM_LENGTH-1);
-							ptrtodefvalue[MAX_PARAM_LENGTH-1] = '\0';
-							RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"CMCSA:: GetParamInfo value is %s\n",parametervalArr[0][0]->value);
-							break;
-							}
-					}
-					char *ptrtoname = parametervalArr[0][0]->name;
-					strncpy(ptrtoname,Param.paramName, MAX_PARAM_LENGTH-1);
-					ptrtoname[MAX_PARAM_LENGTH-1] = '\0';
-				}
-				else
-				{
-					RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"get_ParamValues_tr69hostIf failed:ret is %d\n",ret);
-					ret = WAL_FAILURE;
-				}
-			}
-			else
-			{
-				RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA," Invalid Parameter name %s\n",pParameterName);
-				return WAL_ERR_INVALID_PARAMETER_NAME;
-			}
+                converttohostIfType (dataType, &(Param.paramtype));
+                Param.instanceNum = 0;
+
+                // Convert Param.paramtype to ParamVal.type
+                RDK_LOG (RDK_LOG_DEBUG, LOG_MOD_WEBPA, "CMCSA:: GetParamInfo Param.paramtype is %d\n", Param.paramtype);
+                converttoWalType (Param.paramtype, &(parametervalPtr->type));
+
+                ret = get_ParamValues_tr69hostIf (&Param);
+                if (ret == WAL_SUCCESS)
+                {
+                    parametervalPtr->name = (char*) calloc (MAX_PARAM_LENGTH, sizeof(char));
+                    parametervalPtr->value = (char*) calloc (MAX_PARAM_LENGTH, sizeof(char));
+                    if (parametervalPtr->name == NULL || parametervalPtr->value == NULL)
+                    {
+                        RDK_LOG (RDK_LOG_ERROR, LOG_MOD_WEBPA, "Error allocating memory\n");
+                        ret = WAL_FAILURE;
+                        goto exit1;
+                    }
+
+                    strncat (parametervalPtr->name, Param.paramName, MAX_PARAM_LENGTH - 1);
+
+                    switch (Param.paramtype)
+                    {
+                    case hostIf_IntegerType:
+                    case hostIf_BooleanType:
+                        snprintf (parametervalPtr->value, MAX_PARAM_LENGTH, "%d", *((int *) Param.paramValue));
+                        break;
+                    case hostIf_UnsignedIntType:
+                        snprintf (parametervalPtr->value, MAX_PARAM_LENGTH, "%u", *((unsigned int *) Param.paramValue));
+                        break;
+                    case hostIf_UnsignedLongType:
+                        snprintf (parametervalPtr->value, MAX_PARAM_LENGTH, "%u", *((unsigned long *) Param.paramValue));
+                        break;
+                    case hostIf_StringType:
+                        strncat (parametervalPtr->value, Param.paramValue, MAX_PARAM_LENGTH - 1);
+                        break;
+                    default: // handle as string
+                        strncat (parametervalPtr->value, Param.paramValue, MAX_PARAM_LENGTH - 1);
+                        break;
+                    }
+                    RDK_LOG (RDK_LOG_DEBUG, LOG_MOD_WEBPA, "CMCSA:: GetParamInfo value is %s\n", parametervalPtr->value);
+                }
+                else
+                {
+                    RDK_LOG (RDK_LOG_ERROR, LOG_MOD_WEBPA, "get_ParamValues_tr69hostIf failed:ret is %d\n", ret);
+                    ret = WAL_FAILURE;
+                }
+            }
+            else
+            {
+                RDK_LOG (RDK_LOG_ERROR, LOG_MOD_WEBPA, " Invalid Parameter name %s\n", pParameterName);
+                return WAL_ERR_INVALID_PARAMETER_NAME;
+            }
 exit1:
-			if(ret != WAL_SUCCESS) // For success case generic layer would free up parametervalArr after consuming data
-			{
-				if(parametervalArr[0][0]->value != NULL)
-				{
-					free(parametervalArr[0][0]->value);
-					parametervalArr[0][0]->value = NULL;
-				}
-				if(parametervalArr[0][0]->name != NULL)
-				{
-					free(parametervalArr[0][0]->name);
-					parametervalArr[0][0]->name = NULL;
-				}
-				if(parametervalArr[0][0] != NULL)
-				{
-					free(parametervalArr[0][0]);
-					parametervalArr[0][0] = NULL;
-				}
-				if(parametervalArr[0])
-				{
-					free(parametervalArr[0]);
-					parametervalArr[0] = NULL;
-				}
-			}
-			if(dataType != NULL)
-			{
-				free(dataType);
-				dataType = NULL;
-			}
-			return ret;
-		}
-	}
-	return ret;
+            // For success case generic layer would free up parametervalPtr after consuming data
+            if (ret != WAL_SUCCESS && parametervalPtr != NULL)
+            {
+                if (parametervalPtr->name != NULL)
+                {
+                    free (parametervalPtr->name);
+                    parametervalPtr->name = NULL;
+                }
+                if (parametervalPtr->value != NULL)
+                {
+                    free (parametervalPtr->value);
+                    parametervalPtr->value = NULL;
+                }
+                free (parametervalPtr);
+                parametervalPtr = NULL;
+            }
+            if (dataType != NULL)
+            {
+                free (dataType);
+                dataType = NULL;
+            }
+        }
+        *parametervalPtrPtr = parametervalPtr;
+    }
+    return ret;
 }
 
 /**
