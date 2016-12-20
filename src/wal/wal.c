@@ -484,6 +484,22 @@ static int SetParamInfo(ParamVal paramVal)
 		        return WAL_ERR_INVALID_PARAMETER_VALUE;
 		    }
 		}
+		else if (Param.paramtype == hostIf_IntegerType)
+		{
+		    char *tailPtr;
+		    long int value = (int) strtol (paramVal.value, &tailPtr, 10);
+		    if (strlen (tailPtr)) // "whole" string cannot be interpreted as integer
+		        return WAL_ERR_INVALID_PARAMETER_VALUE;
+		    *((int*) Param.paramValue) = (int) value;
+		}
+		else if (Param.paramtype == hostIf_UnsignedIntType)
+		{
+		    char *tailPtr;
+		    long int value = (int) strtol (paramVal.value, &tailPtr, 10);
+		    if (strlen (tailPtr) || value < 0) // "whole" string cannot be interpreted as unsigned integer
+		        return WAL_ERR_INVALID_PARAMETER_VALUE;
+		    *((int*) Param.paramValue) = (int) value;
+		}
 		else
 		{
 		    strncpy(Param.paramValue, paramVal.value,MAX_PARAM_LENGTH-1);
