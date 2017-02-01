@@ -113,6 +113,7 @@ void getValues (const char *paramName[], const unsigned int paramCount, money_tr
 
     int cnt = 0;
     int numParams = 0;
+    unsigned int failedGetParamInfoCalls = 0;
     for (cnt = 0; cnt < paramCount; cnt++)
     {
         // Because GetParamInfo is responsible for producing results (including wildcard explansion) for only 1 input
@@ -121,6 +122,17 @@ void getValues (const char *paramName[], const unsigned int paramCount, money_tr
         retStatus[cnt] = GetParamInfo (paramName[cnt], &paramValArr[0][cnt], &numParams);
         retValCount[cnt] = numParams;
         RDK_LOG (RDK_LOG_DEBUG, LOG_MOD_WEBPA, "Parameter Name: %s return: %d\n", paramName[cnt], retStatus[cnt]);
+
+        if (retStatus[cnt] != WAL_SUCCESS)
+        {
+            failedGetParamInfoCalls++;
+        }
+    }
+
+    // free paramValArr[0] if any GetParamInfo call failed as generic code frees it only if all calls were successful.
+    if (failedGetParamInfoCalls > 0)
+    {
+        free (paramValArr[0]);
     }
 }
 
@@ -368,7 +380,7 @@ exit0:
             else
             {
                 RDK_LOG (RDK_LOG_ERROR, LOG_MOD_WEBPA, " Invalid Parameter name %s\n", pParameterName);
-                return WAL_ERR_INVALID_PARAMETER_NAME;
+                ret = WAL_ERR_INVALID_PARAMETER_NAME;
             }
 exit1:
             // For success case generic layer would free up parametervalPtr after consuming data
@@ -439,82 +451,81 @@ static int set_ParamValues_tr69hostIf (HOSTIF_MsgData_t param)
 
 static int SetParamInfo(ParamVal paramVal)
 {
+    int ret = WAL_SUCCESS;
+    HOSTIF_MsgData_t Param = {0};
+    memset(&Param, '\0', sizeof(HOSTIF_MsgData_t));
 
-	int ret = WAL_SUCCESS;
-	HOSTIF_MsgData_t Param = {0};
-	memset(&Param, '\0', sizeof(HOSTIF_MsgData_t));
+    char *pdataType = malloc(sizeof(char) * MAX_DATATYPE_LENGTH);
+    if(pdataType == NULL)
+    {
+        RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error allocating memory\n");
+        return WAL_FAILURE;
+    }
 
-	char *pdataType = NULL;
-	pdataType = malloc(sizeof(char) * MAX_DATATYPE_LENGTH);
-	if(pdataType == NULL)
-	{
-		RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error allocating memory\n");
-		return WAL_FAILURE;
-	}
+    if(isParameterValid((void *)g_dbhandle,paramVal.name,pdataType))
+    {
+        DATA_TYPE walType;
+        converttohostIfType(pdataType,&(Param.paramtype));
+        // Convert Param.paramtype to ParamVal.type
+        converttoWalType(Param.paramtype,&walType);
 
-	if(isParameterValid((void *)g_dbhandle,paramVal.name,pdataType))
-	{
-		DATA_TYPE walType;
-		converttohostIfType(pdataType,&(Param.paramtype));
-		// Convert Param.paramtype to ParamVal.type
-		converttoWalType(Param.paramtype,&walType);
+        if(walType != paramVal.type)
+        {
+            RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA," Invalid Parameter type for %s\n",paramVal.name);
+            return WAL_ERR_INVALID_PARAMETER_TYPE;
+        }
 
-		if(walType != paramVal.type)
-		{
-			RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA," Invalid Parameter type for %s\n",paramVal.name);
-			return WAL_ERR_INVALID_PARAMETER_TYPE;
-		}
+        strncpy(Param.paramName, paramVal.name,MAX_PARAM_LENGTH-1);
+        Param.paramName[MAX_PARAM_LENGTH-1]='\0';
 
-		strncpy(Param.paramName, paramVal.name,MAX_PARAM_LENGTH-1);
-		Param.paramName[MAX_PARAM_LENGTH-1]='\0';
+        if (Param.paramtype == hostIf_BooleanType)
+        {
+            bool* boolPtr = (bool*) Param.paramValue;
+            if (strcmp (paramVal.value, "1") == 0 || strcasecmp (paramVal.value, "true") == 0)
+            {
+                *boolPtr = 1;
+            }
+            else if (strcmp (paramVal.value, "0") == 0 || strcasecmp (paramVal.value, "false") == 0)
+            {
+                *boolPtr = 0;
+            }
+            else
+            {
+                return WAL_ERR_INVALID_PARAMETER_VALUE;
+            }
+        }
+        else if (Param.paramtype == hostIf_IntegerType)
+        {
+            char *tailPtr;
+            long int value = (int) strtol (paramVal.value, &tailPtr, 10);
+            if (strlen (tailPtr)) // "whole" string cannot be interpreted as integer
+                return WAL_ERR_INVALID_PARAMETER_VALUE;
+            *((int*) Param.paramValue) = (int) value;
+        }
+        else if (Param.paramtype == hostIf_UnsignedIntType)
+        {
+            char *tailPtr;
+            long int value = (int) strtol (paramVal.value, &tailPtr, 10);
+            if (strlen (tailPtr) || value < 0) // "whole" string cannot be interpreted as unsigned integer
+                return WAL_ERR_INVALID_PARAMETER_VALUE;
+            *((int*) Param.paramValue) = (int) value;
+        }
+        else
+        {
+            strncpy(Param.paramValue, paramVal.value,MAX_PARAM_LENGTH-1);
+            Param.paramValue[MAX_PARAM_LENGTH-1]='\0';
+        }
 
-		if (Param.paramtype == hostIf_BooleanType)
-		{
-		    bool* boolPtr = (bool*) Param.paramValue;
-		    if (strcmp (paramVal.value, "1") == 0 || strcasecmp (paramVal.value, "true") == 0)
-		    {
-		        *boolPtr = 1;
-		    }
-		    else if (strcmp (paramVal.value, "0") == 0 || strcasecmp (paramVal.value, "false") == 0)
-		    {
-		        *boolPtr = 0;
-		    }
-		    else
-		    {
-		        return WAL_ERR_INVALID_PARAMETER_VALUE;
-		    }
-		}
-		else if (Param.paramtype == hostIf_IntegerType)
-		{
-		    char *tailPtr;
-		    long int value = (int) strtol (paramVal.value, &tailPtr, 10);
-		    if (strlen (tailPtr)) // "whole" string cannot be interpreted as integer
-		        return WAL_ERR_INVALID_PARAMETER_VALUE;
-		    *((int*) Param.paramValue) = (int) value;
-		}
-		else if (Param.paramtype == hostIf_UnsignedIntType)
-		{
-		    char *tailPtr;
-		    long int value = (int) strtol (paramVal.value, &tailPtr, 10);
-		    if (strlen (tailPtr) || value < 0) // "whole" string cannot be interpreted as unsigned integer
-		        return WAL_ERR_INVALID_PARAMETER_VALUE;
-		    *((int*) Param.paramValue) = (int) value;
-		}
-		else
-		{
-		    strncpy(Param.paramValue, paramVal.value,MAX_PARAM_LENGTH-1);
-		    Param.paramValue[MAX_PARAM_LENGTH-1]='\0';
-		}
-
-		ret = set_ParamValues_tr69hostIf(Param);
-		RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"set_ParamValues_tr69hostIf %d\n",ret);
-	}
-	else
-	{
-		RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA," Invalid Parameter name %s\n",paramVal.name);
-		return WAL_ERR_INVALID_PARAMETER_NAME;
-	}
-	return ret;
+        ret = set_ParamValues_tr69hostIf(Param);
+        RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"set_ParamValues_tr69hostIf %d\n",ret);
+    }
+    else
+    {
+        RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA," Invalid Parameter name %s\n",paramVal.name);
+        ret = WAL_ERR_INVALID_PARAMETER_NAME;
+    }
+    free (pdataType);
+    return ret;
 }
 
 /**

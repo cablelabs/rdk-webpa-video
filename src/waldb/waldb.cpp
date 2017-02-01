@@ -142,75 +142,77 @@ DB_STATUS getParameterList(void *dbhandle,char *paramName,char **ParamList,char 
 
 static void checkforParameterMatch(TiXmlNode *pParent,char *paramName,int *pMatch,char *dataType)
 {
-	static int matched = 0;
-	if(!pParent)
-		return;
+    static int matched = 0;
+    if(!pParent)
+        return;
 
-	TiXmlNode *pChild;
-	static int isObject = 0;
-	static char ObjectName[MAX_PARAMETER_LENGTH];
-	char *ParameterName = (char *) malloc(sizeof(char) * MAX_PARAMETER_LENGTH);
+    TiXmlNode *pChild;
+    static int isObject = 0;
+    static char ObjectName[MAX_PARAMETER_LENGTH];
 
-	if(pParent->Type() == TiXmlNode::TINYXML_ELEMENT)
-	{
-		TiXmlElement* pElement = pParent->ToElement();
-		TiXmlAttribute* pAttrib = pElement->FirstAttribute();
-		if(!strcmp(pParent->Value(),"object"))
-			isObject = 1;
+    if(pParent->Type() == TiXmlNode::TINYXML_ELEMENT)
+    {
+        TiXmlElement* pElement = pParent->ToElement();
+        TiXmlAttribute* pAttrib = pElement->FirstAttribute();
+        if(!strcmp(pParent->Value(),"object"))
+            isObject = 1;
 
-		if(pAttrib)
-		{
-			// Construct Object without parameter from input ParamName
-			std::string *str1 = new std::string(paramName);
-			std::size_t found = str1->find_last_of(".");
-			char *paramObject = (char *) malloc(sizeof(char) * MAX_PARAMETER_LENGTH);
-			if(found != std::string::npos)
-			{
-				strncpy(paramObject,paramName,found);
-				paramObject[found]='.';
-				paramObject[found+1]='\0';
-			}
-			else
-			{
-				strncpy(paramObject,paramName,MAX_PARAMETER_LENGTH-1);
-				paramObject[MAX_PARAMETER_LENGTH] = '\0';
-			}
+        if(pAttrib)
+        {
+            // Construct Object without parameter from input ParamName
+            std::string *str1 = new std::string(paramName);
+            std::size_t found = str1->find_last_of(".");
+            delete str1;
 
-			free(str1);
-			if(!strcmp(pAttrib->Value(),paramObject))
-			{
-				strncpy(ObjectName,pAttrib->Value(),MAX_PARAMETER_LENGTH-1);
-				ObjectName[MAX_PARAMETER_LENGTH] = '\0';
-				matched = 1;
-			}
-			free(paramObject);
+            char *paramObject = (char *) malloc(sizeof(char) * MAX_PARAMETER_LENGTH);
+            if(found != std::string::npos)
+            {
+                strncpy(paramObject,paramName,found);
+                paramObject[found]='.';
+                paramObject[found+1]='\0';
+            }
+            else
+            {
+                strncpy(paramObject,paramName,MAX_PARAMETER_LENGTH-1);
+                paramObject[MAX_PARAMETER_LENGTH] = '\0';
+            }
 
-			if(matched || !isObject)
-			{
-				if(!strcmp(pParent->Value(),"parameter"))
-				{
-					isObject = 0;
-					strncpy(ParameterName,ObjectName,MAX_PARAMETER_LENGTH-1);
-					strncat(ParameterName,pAttrib->Value(),MAX_PARAMETER_LENGTH-1);
-					ParameterName[MAX_PARAMETER_LENGTH] = '\0';
-					if(!strcmp(ParameterName,paramName))
-					{
-						strncpy(dataType,pParent->FirstChild()->FirstChild()->Value(),MAX_DATATYPE_LENGTH-1);
-						*pMatch = 1;
-						return;
-					}
-				}
-			}
-		}
-	}
+            if(!strcmp(pAttrib->Value(),paramObject))
+            {
+                strncpy(ObjectName,pAttrib->Value(),MAX_PARAMETER_LENGTH-1);
+                ObjectName[MAX_PARAMETER_LENGTH] = '\0';
+                matched = 1;
+            }
+            free(paramObject);
 
-	free(ParameterName);
+            if(matched || !isObject)
+            {
+                if(!strcmp(pParent->Value(),"parameter"))
+                {
+                    isObject = 0;
+                    char *ParameterName = (char *) malloc(sizeof(char) * MAX_PARAMETER_LENGTH);
+                    strncpy(ParameterName,ObjectName,MAX_PARAMETER_LENGTH-1);
+                    strncat(ParameterName,pAttrib->Value(),MAX_PARAMETER_LENGTH-1);
+                    ParameterName[MAX_PARAMETER_LENGTH] = '\0';
+                    bool match = !strcmp(ParameterName,paramName);
+                    free(ParameterName);
+                    if (match)
+                    {
+                        strncpy(dataType,pParent->FirstChild()->FirstChild()->Value(),MAX_DATATYPE_LENGTH-1);
+                        *pMatch = 1;
+                        return;
+                    }
+                }
+            }
+        }
+    }
 
-	for ( pChild = pParent->FirstChild(); pChild != 0; pChild = pChild->NextSibling())
-	{
-		checkforParameterMatch(pChild,paramName,pMatch,dataType);
-	}
-	matched = 0;
+
+    for ( pChild = pParent->FirstChild(); pChild != 0; pChild = pChild->NextSibling())
+    {
+        checkforParameterMatch(pChild,paramName,pMatch,dataType);
+    }
+    matched = 0;
 }
 
 /* @brief Returns a parameter list and count given an input paramName with wildcard characters
@@ -222,99 +224,103 @@ static void checkforParameterMatch(TiXmlNode *pParent,char *paramName,int *pMatc
  */
 int isParameterValid(void *dbhandle,char *paramName,char *dataType)
 {
-	int Match = 0;
-	int first_i = 0;
-	TiXmlDocument *doc = (TiXmlDocument *) dbhandle;
+    int Match = 0;
+    int first_i = 0;
+    TiXmlDocument *doc = (TiXmlDocument *) dbhandle;
+    char *newparamName = NULL;
 
-	/* Check if Parameter is one of {i} entriesi ex:Device.WiFi.Radio.1.Status should become Device.WiFi.Radio.{i}.Status */
-	std::string str(paramName);
-	std::size_t found = str.find_first_of("0123456789");
-	if(found != std::string::npos)
-	{
-        	/* Check if match happens without a {i} */
-        	checkforParameterMatch(doc,paramName,&Match,dataType);
-        	if(Match)
-            		return true;
-		first_i = found+1;
-		char *newparamName =(char *) malloc(sizeof(char) * MAX_PARAMETER_LENGTH);
-		char splitParam[MAX_PARAMETER_LENGTH] = "{i}";
-		if(paramName[found+1] == '.')
-		{
-			strncpy(newparamName,paramName,found);
-			newparamName[found]='\0';
-			strncat(splitParam,str.substr(found+1).data(),MAX_PARAMETER_LENGTH-1);
-			splitParam[MAX_PARAMETER_LENGTH-1]='\0';
-		        // Check for Parameter Match with first {i}
-		        strncat(newparamName,splitParam,MAX_PARAMETER_LENGTH-1);
-		        newparamName[MAX_PARAMETER_LENGTH-1]='\0';
-		        checkforParameterMatch(doc,newparamName,&Match,dataType);
-		        if(Match)
-       			     return true;
-		}
-		else
-		{
-                	strncpy(newparamName,paramName,found+1);
-                	newparamName[found+1]='\0';
-                	strncpy(splitParam,paramName+found+1,MAX_PARAMETER_LENGTH);
-			splitParam[MAX_PARAMETER_LENGTH-1]='\0';
-		}
+    /* Check if Parameter is one of {i} entriesi ex:Device.WiFi.Radio.1.Status should become Device.WiFi.Radio.{i}.Status */
+    std::string str(paramName);
+    std::size_t found = str.find_first_of("0123456789");
+    if(found != std::string::npos)
+    {
+        /* Check if match happens without a {i} */
+        checkforParameterMatch(doc,paramName,&Match,dataType);
+        if(Match)
+            return true;
+        first_i = found+1;
+        newparamName =(char *) malloc(sizeof(char) * MAX_PARAMETER_LENGTH);
+        char splitParam[MAX_PARAMETER_LENGTH] = "{i}";
+        if(paramName[found+1] == '.')
+        {
+            strncpy(newparamName,paramName,found);
+            newparamName[found]='\0';
+            strncat(splitParam,str.substr(found+1).data(),MAX_PARAMETER_LENGTH-1);
+            splitParam[MAX_PARAMETER_LENGTH-1]='\0';
+            // Check for Parameter Match with first {i}
+            strncat(newparamName,splitParam,MAX_PARAMETER_LENGTH-1);
+            newparamName[MAX_PARAMETER_LENGTH-1]='\0';
+            checkforParameterMatch(doc,newparamName,&Match,dataType);
+            if(Match)
+                goto freeResources;
+        }
+        else
+        {
+            strncpy(newparamName,paramName,found+1);
+            newparamName[found+1]='\0';
+            strncpy(splitParam,paramName+found+1,MAX_PARAMETER_LENGTH);
+            splitParam[MAX_PARAMETER_LENGTH-1]='\0';
+        }
 
-		// Check if splitParam has a digit
-		std::string str(splitParam);
-		std::size_t found = str.find_first_of("0123456789");
-		if(found != std::string::npos)
-		{
-			strncpy(newparamName,paramName,first_i);
-            		newparamName[first_i] = '\0';
+        // Check if splitParam has a digit
+        std::string str(splitParam);
+        std::size_t found = str.find_first_of("0123456789");
+        if(found != std::string::npos)
+        {
+            strncpy(newparamName,paramName,first_i);
+            newparamName[first_i] = '\0';
 
-               		if(splitParam[found+1]=='.')
-                	{
-				splitParam[found]='\0';
-				strcat(splitParam,"{i}");
-				strncat(splitParam,str.substr(found+1).data(),MAX_PARAMETER_LENGTH-1);
-				splitParam[MAX_PARAMETER_LENGTH-1]='\0';
+            if(splitParam[found+1]=='.')
+            {
+                splitParam[found]='\0';
+                strcat(splitParam,"{i}");
+                strncat(splitParam,str.substr(found+1).data(),MAX_PARAMETER_LENGTH-1);
+                splitParam[MAX_PARAMETER_LENGTH-1]='\0';
 
-			        strncat(newparamName,splitParam+3,MAX_PARAMETER_LENGTH-1);
-            			newparamName[MAX_PARAMETER_LENGTH-1]='\0';
-            			checkforParameterMatch(doc,newparamName,&Match,dataType);
-            			if(Match)
-               				return true;
-			}
-			else
-			{
-		                /* Find if there are more {i} entries */
-		                int first_num = found;
-		                std::string str(splitParam+first_num+1);
-		                std::size_t found = str.find_first_of("0123456789");
-		                if(found != std::string::npos)
-		                {
-		                    splitParam[found+first_num]='\0';
-		                    strcat(splitParam,".{i}");
-		                    strncat(splitParam,str.substr(found+1).data(),MAX_PARAMETER_LENGTH-1);
-		                    splitParam[MAX_PARAMETER_LENGTH-1]='\0';
-		                    //Check for parameter match with second {i}
-		                    strncat(newparamName,splitParam+3,MAX_PARAMETER_LENGTH-1);
-		                    newparamName[MAX_PARAMETER_LENGTH-1]='\0';
-		                    checkforParameterMatch(doc,newparamName,&Match,dataType);
-		                    if(Match)
-		                        return true;
-				}
-			}
-		}
+                strncat(newparamName,splitParam+3,MAX_PARAMETER_LENGTH-1);
+                newparamName[MAX_PARAMETER_LENGTH-1]='\0';
+                checkforParameterMatch(doc,newparamName,&Match,dataType);
+                if(Match)
+                    goto freeResources;
+            }
+            else
+            {
+                /* Find if there are more {i} entries */
+                int first_num = found;
+                std::string str(splitParam+first_num+1);
+                std::size_t found = str.find_first_of("0123456789");
+                if(found != std::string::npos)
+                {
+                    splitParam[found+first_num]='\0';
+                    strcat(splitParam,".{i}");
+                    strncat(splitParam,str.substr(found+1).data(),MAX_PARAMETER_LENGTH-1);
+                    splitParam[MAX_PARAMETER_LENGTH-1]='\0';
+                    //Check for parameter match with second {i}
+                    strncat(newparamName,splitParam+3,MAX_PARAMETER_LENGTH-1);
+                    newparamName[MAX_PARAMETER_LENGTH-1]='\0';
+                    checkforParameterMatch(doc,newparamName,&Match,dataType);
+                    if(Match)
+                        goto freeResources;
+                }
+            }
+        }
 
-		if(first_i)
-	        	newparamName[first_i-1]='\0';	
-		strncat(newparamName,splitParam,MAX_PARAMETER_LENGTH-1);
-		newparamName[MAX_PARAMETER_LENGTH-1]='\0';
-		checkforParameterMatch(doc,newparamName,&Match,dataType);
-		free(newparamName);
-	}
-	else
-	{
-		checkforParameterMatch(doc,paramName,&Match,dataType);
-	}
-	if(Match)
-		return 1;
-	else
-		return 0;
+        if(first_i)
+            newparamName[first_i-1]='\0';
+        strncat(newparamName,splitParam,MAX_PARAMETER_LENGTH-1);
+        newparamName[MAX_PARAMETER_LENGTH-1]='\0';
+        checkforParameterMatch(doc,newparamName,&Match,dataType);
+    }
+    else
+    {
+        checkforParameterMatch(doc,paramName,&Match,dataType);
+    }
+
+freeResources:
+    if (newparamName)
+    {
+        free(newparamName);
+    }
+
+    return Match;
 }
