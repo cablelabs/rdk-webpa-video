@@ -4,6 +4,7 @@
 #include "libIARM.h"
 typedef unsigned int bool;
 #include "hostIf_tr69ReqHandler.h"
+#include "cJSON.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -12,6 +13,8 @@ typedef unsigned int bool;
 
 #define MAX_NUM_PARAMETERS 2048
 #define MAX_DATATYPE_LENGTH 48
+#define MAX_PARAMETER_LENGTH 512
+#define MAX_PARAMETERVALUE_LEN 128
 #define MAX_PARAM_LENGTH TR69HOSTIFMGR_MAX_PARAM_LEN
 
 /* WebPA Configuration for RDKV */
@@ -29,18 +32,25 @@ typedef unsigned int bool;
 #define RDKV_DEVICE_UP_TIME                  "Device.DeviceInfo.UpTime"
 #define STR_NOT_DEFINED                      "not.defined"
 #define LOG_MOD_WEBPA                        "LOG.RDK.WEBPAVIDEO"
+#define WEBPA_NOTIFYCFG_FILE                 "/etc/notify_webpa_cfg.json"
 
 static int get_ParamValues_tr69hostIf(HOSTIF_MsgData_t *param);
 static int GetParamInfo (const char *pParameterName, ParamVal **parametervalPtrPtr, int *paramCountPtr);
 static int set_ParamValues_tr69hostIf (HOSTIF_MsgData_t param);
 static int SetParamInfo(ParamVal paramVal);
+static int get_AttribValues_tr69hostIf(HOSTIF_MsgData_t *ptrParam);
 static int getParamAttributes(const char *pParameterName, AttrVal ***attr, int *TotalParams);
+static int set_AttribValues_tr69hostIf (HOSTIF_MsgData_t param);
 static int setParamAttributes(const char *pParameterName, const AttrVal *attArr);
+static void  _tr69Event_handler(const char *owner, IARM_Bus_tr69HostIfMgr_EventId_t eventId, void *data, size_t len);
 
 static void converttohostIfType(char *ParamDataType,HostIf_ParamType_t* pParamType);
 static void converttoWalType(HostIf_ParamType_t paramType,DATA_TYPE* walType);
 //static char *get_NetworkIfName(void);
 static int g_dbhandle = 0;
+void (*notifyCbFn)(ParamNotify*) = NULL;
+char **g_notifyParamList = NULL;
+unsigned int g_notifyListSize = 0;
 
 static void converttohostIfType(char *ParamDataType,HostIf_ParamType_t* pParamType)
 {
@@ -87,7 +97,44 @@ static void converttoWalType(HostIf_ParamType_t paramType,DATA_TYPE* pwalType)
 		break;
 	}
 }
+int getnotifyparamList(const char *cfgFileName,char ***notifyParamList,unsigned int *ptrnotifyListSize)
+{
+        char *temp_ptr = NULL;
+        char *notifycfg_file_content = NULL;
+        int i = 0;
+        int ch_count = 0;
 
+        FILE *fp = NULL;
+
+        fp = fopen(cfgFileName, "r");
+        if (fp == NULL)
+        {
+                RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Failed to open cfg file %s\n", WEBPA_NOTIFYCFG_FILE);
+                return -1;
+        }
+        fseek(fp, 0, SEEK_END);
+        ch_count = ftell(fp);
+        fseek(fp, 0, SEEK_SET);
+        notifycfg_file_content = (char *) malloc(sizeof(char) * (ch_count + 1));
+        fread(notifycfg_file_content, 1, ch_count,fp);
+        notifycfg_file_content[ch_count] ='\0';
+        fclose(fp);
+
+        cJSON *notify_cfg = cJSON_Parse(notifycfg_file_content);
+        cJSON *notifyArray = cJSON_GetObjectItem(notify_cfg,"Notify");
+
+        *ptrnotifyListSize = cJSON_GetArraySize(notifyArray);
+        *notifyParamList = (char **)malloc(sizeof(char *) * *ptrnotifyListSize);
+        for (i = 0 ; i < cJSON_GetArraySize(notifyArray) ; i++)
+        {
+                temp_ptr = cJSON_GetArrayItem(notifyArray, i)->valuestring;
+                if(temp_ptr)
+                {
+                        (*notifyParamList)[i] = (char *)malloc(sizeof(char ) * (strlen(temp_ptr)+1));
+                        strcpy((*notifyParamList)[i],temp_ptr);
+                }
+        }
+}
 
 /**
  * @brief getValues interface returns the parameter values.
@@ -113,7 +160,6 @@ void getValues (const char *paramName[], const unsigned int paramCount, money_tr
 
     int cnt = 0;
     int numParams = 0;
-    unsigned int failedGetParamInfoCalls = 0;
     for (cnt = 0; cnt < paramCount; cnt++)
     {
         // Because GetParamInfo is responsible for producing results (including wildcard explansion) for only 1 input
@@ -121,19 +167,64 @@ void getValues (const char *paramName[], const unsigned int paramCount, money_tr
         // GetParamInfo for initialization. So GetParamInfo has to take a "ParamVal**" as input.
         retStatus[cnt] = GetParamInfo (paramName[cnt], &paramValArr[0][cnt], &numParams);
         retValCount[cnt] = numParams;
-        RDK_LOG (RDK_LOG_DEBUG, LOG_MOD_WEBPA, "Parameter Name: %s return: %d\n", paramName[cnt], retStatus[cnt]);
-
-        if (retStatus[cnt] != WAL_SUCCESS)
-        {
-            failedGetParamInfoCalls++;
-        }
     }
+}
+static void  _tr69Event_handler(const char *owner, IARM_Bus_tr69HostIfMgr_EventId_t eventId, void *data, size_t len)
+{
+	IARM_Bus_tr69HostIfMgr_EventData_t *tr69EventData = (IARM_Bus_tr69HostIfMgr_EventData_t *)data;
+	ParamNotify *paramNotify = (ParamNotify *) malloc(sizeof(ParamNotify));
+	memset(paramNotify,0,sizeof(ParamNotify));
 
-    // free paramValArr[0] if any GetParamInfo call failed as generic code frees it only if all calls were successful.
-    if (failedGetParamInfoCalls > 0)
-    {
-        free (paramValArr[0]);
-    }
+	if (0 == strcmp(owner, IARM_BUS_TR69HOSTIFMGR_NAME))
+	{
+		switch (eventId)
+		{
+		case IARM_BUS_TR69HOSTIFMGR_EVENT_ADD:
+			if(tr69EventData->paramName)
+			{
+				paramNotify->paramName = tr69EventData->paramName;
+			}
+			if(tr69EventData->paramValue)
+			{
+				paramNotify->newValue = tr69EventData->paramValue;
+			}
+			//paramNotify->oldValue= val->oldValue;
+			converttoWalType(tr69EventData->paramtype,&(paramNotify->type));
+			break;
+		case IARM_BUS_TR69HOSTIFMGR_EVENT_REMOVE:
+			if(tr69EventData->paramName)
+			{
+				paramNotify->paramName = tr69EventData->paramName;
+			}
+			if(tr69EventData->paramValue)
+			{
+				paramNotify->newValue = tr69EventData->paramValue;
+			}
+			//paramNotify->oldValue= val->oldValue;
+			converttoWalType(tr69EventData->paramtype,&(paramNotify->type));
+			break;
+		case IARM_BUS_TR69HOSTIFMGR_EVENT_VALUECHANGED:
+			if(tr69EventData->paramName)
+			{
+				paramNotify->paramName = tr69EventData->paramName;
+			}
+			if(tr69EventData->paramValue)
+			{
+				paramNotify->newValue = tr69EventData->paramValue;
+			}
+			converttoWalType(tr69EventData->paramtype,&(paramNotify->type));
+//    	paramNotify->changeSource = mapWriteID(val->writeID);
+			break;
+		default:
+			break;
+		}
+	}
+	RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"Notification Event from stack: Parameter Name: %s, Old Value: %s, New Value: %s, Data Type: %d, Write ID: %d\n", paramNotify->paramName, paramNotify->oldValue, paramNotify->newValue, paramNotify->type, paramNotify->changeSource);
+
+	if(notifyCbFn != NULL)
+	{
+		(*notifyCbFn)(paramNotify);
+	}
 }
 
 /**
@@ -160,6 +251,13 @@ WAL_STATUS msgBusInit(const char *name)
 		RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error connecting to IARM Bus for '%s'\r\n", name);
 		return WAL_FAILURE;
 	}
+	/* Register for IARM Events */
+	IARM_Bus_RegisterEventHandler(IARM_BUS_TR69HOSTIFMGR_NAME, IARM_BUS_TR69HOSTIFMGR_EVENT_ADD,(IARM_EventHandler_t) _tr69Event_handler);
+	IARM_Bus_RegisterEventHandler(IARM_BUS_TR69HOSTIFMGR_NAME, IARM_BUS_TR69HOSTIFMGR_EVENT_REMOVE,(IARM_EventHandler_t)_tr69Event_handler);
+	IARM_Bus_RegisterEventHandler(IARM_BUS_TR69HOSTIFMGR_NAME, IARM_BUS_TR69HOSTIFMGR_EVENT_VALUECHANGED, (IARM_EventHandler_t)_tr69Event_handler);
+
+	/* Register call for notify events */
+	IARM_Bus_RegisterEvent(1);
 
 	// Load Document model
 	dbRet = loaddb("/etc/data-model.xml",(void *)&g_dbhandle);
@@ -169,6 +267,40 @@ WAL_STATUS msgBusInit(const char *name)
 		RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error loading database\n");
 		return WAL_FAILURE;
 	}
+	//Read notify configuration file and populate notifylist
+	getnotifyparamList(WEBPA_NOTIFYCFG_FILE,&g_notifyParamList,&g_notifyListSize);
+
+	//Set Notify attributes for the parameters in the list
+	int i = 0;
+	char notif[20] = "";
+	money_trace_spans *wildcardSpan = NULL;
+	WAL_STATUS *walret = NULL;
+	AttrVal **attArr = NULL;
+	walret = (WAL_STATUS *) malloc(sizeof(WAL_STATUS) * 1);
+	attArr = (AttrVal **) malloc(sizeof(AttrVal *) * 1);
+	for(i=0; i < g_notifyListSize;i++)
+	{
+		attArr[0] = (AttrVal *) malloc(sizeof(AttrVal) * 1);
+		snprintf(notif, sizeof(notif), "%d", 1);
+		attArr[0]->value = (char *) malloc(sizeof(char) * 20);
+		strcpy(attArr[0]->value, notif);
+		attArr[0]->name= (char *) g_notifyParamList[i];
+		attArr[0]->type = WAL_INT;
+		setAttributes((const char **)&g_notifyParamList[i], 1, wildcardSpan, (const AttrVal **) attArr, walret);
+
+		if(walret[0] != WAL_SUCCESS)
+		{
+			RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Failed to turn notification ON for parameter : %s walret: %d \n", g_notifyParamList[i], walret[0]);
+		}
+		else
+		{
+			RDK_LOG(RDK_LOG_INFO,LOG_MOD_WEBPA,"Successfully set notification ON for parameter : %s walret: %d\n",g_notifyParamList[i], walret[0]);
+		}
+		WAL_FREE(attArr[0]->value);
+		WAL_FREE(attArr[0]);
+     }
+        WAL_FREE(walret);
+        WAL_FREE(attArr);
 }
 
 /**
@@ -179,7 +311,7 @@ WAL_STATUS msgBusInit(const char *name)
  */
 WAL_STATUS RegisterNotifyCB(notifyCB cb)
 {
-	//TODO
+	notifyCbFn = cb;
 	return WAL_SUCCESS;
 }
 
@@ -189,12 +321,9 @@ WAL_STATUS RegisterNotifyCB(notifyCB cb)
 static int get_ParamValues_tr69hostIf(HOSTIF_MsgData_t *ptrParam)
 {
 	IARM_Result_t ret = IARM_RESULT_IPCCORE_FAIL;
-
 	ptrParam->reqType = HOSTIF_GET;
 
 	ret = IARM_Bus_Call(IARM_BUS_TR69HOSTIFMGR_NAME, IARM_BUS_TR69HOSTIFMGR_API_GetParams, (void *)ptrParam, sizeof(HOSTIF_MsgData_t));
-
-
 	if(ret != IARM_RESULT_SUCCESS) {
 		RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"[%s:%s:%d] Failed in IARM_Bus_Call(), with return value: %d\n", __FILE__, __FUNCTION__, __LINE__, ret);
 		return WAL_ERR_INVALID_PARAM;
@@ -203,7 +332,6 @@ static int get_ParamValues_tr69hostIf(HOSTIF_MsgData_t *ptrParam)
 	{
 		RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"[%s:%s:%d] The value for param: %s is %s paramLen : %d\n", __FILE__, __FUNCTION__, __LINE__, ptrParam->paramName,ptrParam->paramValue, ptrParam->paramLen);
 	}
-
 	return WAL_SUCCESS;
 }
 
@@ -215,7 +343,24 @@ static int GetParamInfo (const char *pParameterName, ParamVal **parametervalPtrP
     int ret = WAL_FAILURE;
     DB_STATUS dbRet = DB_FAILURE;
     HOSTIF_MsgData_t Param = { 0 };
-
+	memset(&Param, '\0', sizeof(HOSTIF_MsgData_t));
+#if 0
+        /* Fake getvalues for SYNC Parameters*/
+	if(strstr(pParameterName,"Device.DeviceInfo.Webpa."))
+	{
+		parametervalArr[0] = (ParamVal **) malloc(sizeof(ParamVal*));
+                memset(parametervalArr[0],0,sizeof(ParamVal*));
+                parametervalArr[0][0]=malloc(sizeof(ParamVal));
+                memset(parametervalArr[0][0],0,sizeof(ParamVal));
+                parametervalArr[0][0]->name = NULL;
+                parametervalArr[0][0]->value = NULL;
+		parametervalArr[0][0]->name=malloc(sizeof(char)*strlen(Param.paramName)+1);
+		parametervalArr[0][0]->value=malloc(sizeof(char)*strlen(Param.paramValue)+1);
+                parametervalArr[0][0]->type = WAL_UINT;
+		strncpy(parametervalArr[0][i]->value,"2", strlen("2")); // 2 corresponds to CHANGED_BY_ACS
+		return WAL_SUCCESS;
+	}
+#endif
     if (g_dbhandle)
     {
         ParamVal* parametervalPtr = NULL;
@@ -455,12 +600,13 @@ static int SetParamInfo(ParamVal paramVal)
     HOSTIF_MsgData_t Param = {0};
     memset(&Param, '\0', sizeof(HOSTIF_MsgData_t));
 
-    char *pdataType = malloc(sizeof(char) * MAX_DATATYPE_LENGTH);
-    if(pdataType == NULL)
-    {
-        RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error allocating memory\n");
-        return WAL_FAILURE;
-    }
+	char *pdataType = NULL;
+	pdataType = malloc(sizeof(char) * MAX_DATATYPE_LENGTH);
+	if(pdataType == NULL)
+	{
+		RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error allocating memory\n");
+		return WAL_FAILURE;
+	}
 
     if(isParameterValid((void *)g_dbhandle,paramVal.name,pdataType))
     {
@@ -547,11 +693,68 @@ void getAttributes(const char *paramName[], const unsigned int paramCount, money
 		RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"Parameter Name: %s, Parameter Attributes return: %d\n",paramName[cnt],retStatus[cnt]);
 	}
 }
+static int get_AttribValues_tr69hostIf(HOSTIF_MsgData_t *ptrParam)
+{
+	IARM_Result_t ret = IARM_RESULT_IPCCORE_FAIL;
+
+	ptrParam->reqType = HOSTIF_GETATTRIB;
+	ret = IARM_Bus_Call(IARM_BUS_TR69HOSTIFMGR_NAME, IARM_BUS_TR69HOSTIFMGR_API_GetAttributes, (void *)ptrParam, sizeof(HOSTIF_MsgData_t));
+	if(ret != IARM_RESULT_SUCCESS) {
+			RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"[%s:%s:%d] Failed in IARM_Bus_Call(), with return value: %d\n", __FILE__, __FUNCTION__, __LINE__, ret);
+			return WAL_ERR_INVALID_PARAM;
+	}
+	else
+	{
+			RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"[%s:%s:%d] The value for param: %s is %s paramLen : %d\n", __FILE__, __FUNCTION__, __LINE__, ptrParam->paramName,ptrParam->paramValue, ptrParam->paramLen);
+	}
+
+	return WAL_SUCCESS;
+}
+
 
 static int getParamAttributes(const char *pParameterName, AttrVal ***attr, int *TotalParams)
 {
-	// TODO:Implement Attributes
-	return 0;
+    int ret = WAL_SUCCESS;
+	int sizeAttrArr = 1; // Currently support only Notification parameter
+	int i = 0;
+    HOSTIF_MsgData_t Param = {0};
+
+    memset(&Param, '\0', sizeof(HOSTIF_MsgData_t));
+
+	// Check if pParameterName is in the list of notification parameters and check if the parameter is one among them
+	int found = 0;
+	for(i = 0; i < g_notifyListSize; i++)
+	{
+		if(!strcmp(pParameterName,g_notifyParamList[i]))
+		{
+			found = 1;
+			break;
+		}
+	}
+	if(!found)
+	{
+		return WAL_ERR_INVALID_PARAM;
+	}
+
+	*TotalParams = sizeAttrArr;
+	attr[0] = (AttrVal **) malloc(sizeof(AttrVal *) * sizeAttrArr);
+	for(i = 0; i < sizeAttrArr; i++)
+	{
+      	attr[0][i] = (AttrVal *) malloc(sizeof(AttrVal) * 1);
+              attr[0][i]->name = (char *) malloc(sizeof(char) * MAX_PARAMETER_LENGTH);
+              attr[0][i]->value = (char *) malloc(sizeof(char) * MAX_PARAMETERVALUE_LEN);
+
+		strcpy(attr[0][i]->name,pParameterName); // Currently only one attribute ie., notification, so use the parameter name to get its value
+		/* Get Notification value for the parameter from hostif */
+		strncpy(Param.paramName,pParameterName,strlen(pParameterName)+1);
+		Param.instanceNum = 0;
+		Param.paramtype = hostIf_IntegerType;
+		ret = get_AttribValues_tr69hostIf(&Param);
+        strncpy(attr[0][i]->value,Param.paramValue, strlen(Param.paramValue));
+        attr[0][i]->value[strlen(Param.paramValue)] = '\0';
+	 	attr[0][i]->type = WAL_INT; // Currently only notification which is a int
+	}
+	return WAL_SUCCESS;
 }
 
 /**
@@ -571,11 +774,56 @@ void setAttributes(const char *paramName[], const unsigned int paramCount, money
 		retStatus[cnt] = setParamAttributes(paramName[cnt],attr[cnt]);
 	}
 }
+/**
+ * generic Api for set attribute HostIf parameters through IARM_TR69Bus
+**/
+static int set_AttribValues_tr69hostIf (HOSTIF_MsgData_t param)
+{
+RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"[%s:%s:%d] BEFORE IARM BUS CALL\n", __FILE__, __FUNCTION__, __LINE__);
+	IARM_Result_t ret = IARM_RESULT_IPCCORE_FAIL;
+	param.reqType = HOSTIF_SETATTRIB;
+	ret = IARM_Bus_Call(IARM_BUS_TR69HOSTIFMGR_NAME,
+						IARM_BUS_TR69HOSTIFMGR_API_SetAttributes,
+						(void *)&param,
+						sizeof(param));
+	if(ret != IARM_RESULT_SUCCESS) {
+			RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"[%s:%s:%d] Failed in IARM_Bus_Call(), with return value: %d\n", __FILE__, __FUNCTION__, __LINE__, ret);
+			return WAL_ERR_INVALID_PARAMETER_NAME;
+	}
+	else
+	{
+			RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"[%s:%s:%d] Set Successful for value : %s\n", __FILE__, __FUNCTION__, __LINE__, (char *)param.paramValue);
+	}
+	return WAL_SUCCESS;
+}
 
 static int setParamAttributes(const char *pParameterName, const AttrVal *attArr)
 {
-	// TODO:Implement Attributes
-	return 0;
+    int ret = WAL_SUCCESS;
+    int i = 0;
+    HOSTIF_MsgData_t Param = {0};
+    memset(&Param, '\0', sizeof(HOSTIF_MsgData_t));
+
+    // Enable only for notification parameters in the config file
+    int found = 0;
+    for(i = 0; i < g_notifyListSize; i++)
+    {
+            if(!strcmp(pParameterName,g_notifyParamList[i]))
+            {
+                    found = 1;
+                    break;
+            }
+    }
+    if(!found)
+    {
+            return WAL_SUCCESS; //Fake success for all setattributes now
+    }
+
+    strcpy(Param.paramName, pParameterName);
+    strcpy(Param.paramValue, attArr->value);
+    Param.paramtype = hostIf_IntegerType;
+    ret = set_AttribValues_tr69hostIf (Param);
+    return ret;
 }
 
 /**
@@ -707,7 +955,6 @@ const char* getWebPAConfig(WCFG_PARAM_NAME param)
 		case WCFG_XPC_SYNC_PARAM_SPV:
 			ret = RDKV_XPC_SYNC_PARAM_SPV;
 			break;
-
                 case WCFG_FIRMWARE_VERSION:
                         ret = RDKV_FIRMWARE_VERSION;
                         break;
@@ -765,7 +1012,9 @@ void waitForOperationalReadyCondition()
 
 void getNotifyParamList(const char ***paramList,int *size)
 {
-	//TODO: Implement Initial webpa notification SET if required
+
+     RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"[%s:%s:%d] TODO:- getNotifyParamList() ", __FILE__, __FUNCTION__, __LINE__);
+	//getnotifyparamList(WEBPA_NOTIFYCFG_FILE,paramList,&size);
 }
 
 /* int main ( int arc, char **argv )
@@ -791,3 +1040,4 @@ char *get_NetworkIfName( void )
     return curIfName;
 }
 #endif
+
