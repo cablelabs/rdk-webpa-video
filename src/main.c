@@ -11,6 +11,10 @@
 #include "websocket_mgr.h"
 #include "rdk_debug.h"
 
+#ifdef WEBPA_RFC_ENABLED
+#define RFC_BUFFER_SIZE 	256
+#endif
+#define LOG_MOD_WEBPA       "LOG.RDK.WEBPAVIDEO"
 
 /*----------------------------------------------------------------------------*/
 /*                             Function Prototypes                            */
@@ -27,24 +31,37 @@ void logCallback(const char *buff)
 }
 #endif
 
+#ifdef WEBPA_RFC_ENABLED
+/* Utility function to parse the console output. */
+int GetFeatureEnabled(char *cmd)
+{
+    FILE * pipeStream = NULL;
+    char buffer[RFC_BUFFER_SIZE];
+    int isFeatureEnabled = 0;
+
+    memset(buffer, 0, RFC_BUFFER_SIZE);
+    pipeStream = popen(cmd, "r");
+    if (pipeStream != NULL)
+    {
+        if (fgets(buffer, RFC_BUFFER_SIZE, pipeStream) != NULL)
+            sscanf(buffer,"%d",&isFeatureEnabled);
+        else
+            RDK_LOG(RDK_LOG_ERROR, LOG_MOD_WEBPA,"[%s] %s End of stream.\n", __FUNCTION__, cmd);
+        pclose(pipeStream);
+    }
+    return isFeatureEnabled;
+}
+#endif
+
 /*----------------------------------------------------------------------------*/
 /*                             External Functions                             */
 /*----------------------------------------------------------------------------*/
 int main(int argc,char *argv[])
 {
 	const char* debugConfigFile = NULL;
-	signal(SIGTERM, sig_handler);
-	signal(SIGINT, sig_handler);
-	signal(SIGUSR1, sig_handler);
-	signal(SIGUSR2, sig_handler);
-	signal(SIGSEGV, sig_handler);
-	signal(SIGBUS, sig_handler);
-	signal(SIGKILL, sig_handler);
-	signal(SIGFPE, sig_handler);
-	signal(SIGILL, sig_handler);
-	signal(SIGQUIT, sig_handler);
-	signal(SIGHUP, sig_handler);
-	signal(SIGALRM, sig_handler);
+#ifdef WEBPA_RFC_ENABLED
+	int retVal = 0;
+#endif
 
 	if(argc>1)
         if(strcmp(argv[1],"--debugconfig")==0)
@@ -58,6 +75,26 @@ int main(int argc,char *argv[])
            rdk_logger_init(debugConfigFile);
 #endif
         }
+
+#ifdef WEBPA_RFC_ENABLED
+	retVal = GetFeatureEnabled(". /lib/rdk/isFeatureEnabled.sh WEBPAXG");
+	RDK_LOG(RDK_LOG_INFO, LOG_MOD_WEBPA,"[%s] WEBPAXG returns %d\n", __FUNCTION__, retVal);
+	if( retVal == 0)
+	    return 1;
+#endif
+
+	signal(SIGTERM, sig_handler);
+	signal(SIGINT, sig_handler);
+	signal(SIGUSR1, sig_handler);
+	signal(SIGUSR2, sig_handler);
+	signal(SIGSEGV, sig_handler);
+	signal(SIGBUS, sig_handler);
+	signal(SIGKILL, sig_handler);
+	signal(SIGFPE, sig_handler);
+	signal(SIGILL, sig_handler);
+	signal(SIGQUIT, sig_handler);
+	signal(SIGHUP, sig_handler);
+	signal(SIGALRM, sig_handler);
 
 	msgBusInit("webpa");
 	createSocketConnection();
