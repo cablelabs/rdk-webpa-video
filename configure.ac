@@ -13,6 +13,20 @@ AM_INIT_AUTOMAKE([subdir-objects foreign no-dist-gzip dist-bzip2 1.9])
 LT_INIT
 AC_LANG([C++])
 
+AC_ARG_ENABLE([webpaRFC],
+        AS_HELP_STRING([--enable-webpaRFC],[enable WEBPA_RFC profile (default is no)]),
+        [
+          case "${enableval}" in
+           yes) WEBPA_RFC_ENABLE=true
+                WEBPA_RFC_FLAG="-DWEBPA_RFC_ENABLED" ;;
+           no) WEBPA_RFC_ENABLE=false AC_MSG_ERROR([WEBPA_RFC is disabled]) ;;
+          *) AC_MSG_ERROR([bad value ${enableval} for --enable-webpaRFC ]) ;;
+           esac
+           ],
+         [echo "WEBPA_RFC is disabled"])
+
+AM_CONDITIONAL([WITH_WEBPA_RFC], [test x$WEBPA_RFC_ENABLE = xtrue])
+
 m4_ifdef([AM_SILENT_RULES],[AM_SILENT_RULES([yes])],
 [AM_DEFAULT_VERBOSITY=1
 AC_SUBST(AM_DEFAULT_VERBOSITY)])
