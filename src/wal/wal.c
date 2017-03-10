@@ -48,7 +48,7 @@ static void converttohostIfType(char *ParamDataType,HostIf_ParamType_t* pParamTy
 static void converttoWalType(HostIf_ParamType_t paramType,DATA_TYPE* walType);
 //static char *get_NetworkIfName(void);
 static int g_dbhandle = 0;
-void (*notifyCbFn)(ParamNotify*) = NULL;
+void (*notifyCbFn)(NotifyData*) = NULL;
 char **g_notifyParamList = NULL;
 unsigned int g_notifyListSize = 0;
 
@@ -223,7 +223,14 @@ static void  _tr69Event_handler(const char *owner, IARM_Bus_tr69HostIfMgr_EventI
 
 	if(notifyCbFn != NULL)
 	{
-		(*notifyCbFn)(paramNotify);
+		NotifyData *notifyDataPtr = (NotifyData *) malloc(sizeof(NotifyData) * 1);
+		notifyDataPtr->type = PARAM_NOTIFY;
+		Notify_Data *notify_data = (Notify_Data *) malloc(sizeof(Notify_Data) * 1);
+		notify_data->notify = paramNotify;
+		notifyDataPtr->data = notify_data;
+		RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"Notification forwarded for Parameter Name (%s) with Value (%s) and Data type (%d).\n",
+					paramNotify->paramName,  paramNotify->newValue, paramNotify->type);
+		(*notifyCbFn)(notifyDataPtr);
 	}
 }
 
