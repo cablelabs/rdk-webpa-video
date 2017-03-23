@@ -43,7 +43,7 @@ static int getParamAttributes(const char *pParameterName, AttrVal ***attr, int *
 static int set_AttribValues_tr69hostIf (HOSTIF_MsgData_t param);
 static int setParamAttributes(const char *pParameterName, const AttrVal *attArr);
 static void  _tr69Event_handler(const char *owner, IARM_Bus_tr69HostIfMgr_EventId_t eventId, void *data, size_t len);
-
+static int getNotificationValue(const char *pParameterName);
 static void converttohostIfType(char *ParamDataType,HostIf_ParamType_t* pParamType);
 static void converttoWalType(HostIf_ParamType_t paramType,DATA_TYPE* walType);
 //static char *get_NetworkIfName(void);
@@ -169,71 +169,111 @@ void getValues (const char *paramName[], const unsigned int paramCount, money_tr
         retValCount[cnt] = numParams;
     }
 }
+
+/**
+ * @brief Check if Parameter Name present in Notification list or not
+ *
+ * @param[in] pParameterName Name of the Parameter.
+ * @param[out] retStatus 0 if present and 1 if not
+ */
+static int getNotificationValue(const char *pParameterName)
+{
+    // Check if Parameter Name present in Notification list or not
+    int found = 0;
+    int count;
+    for(count = 0; count < g_notifyListSize; count++)
+    {
+        if((NULL != pParameterName) && (!strcmp(pParameterName,g_notifyParamList[count])))
+        {
+        	found = 1;
+            break;
+        }
+    }
+    return found;
+}
 static void  _tr69Event_handler(const char *owner, IARM_Bus_tr69HostIfMgr_EventId_t eventId, void *data, size_t len)
 {
-	IARM_Bus_tr69HostIfMgr_EventData_t *tr69EventData = (IARM_Bus_tr69HostIfMgr_EventData_t *)data;
-	ParamNotify *paramNotify = (ParamNotify *) malloc(sizeof(ParamNotify));
-	memset(paramNotify,0,sizeof(ParamNotify));
+    IARM_Bus_tr69HostIfMgr_EventData_t *tr69EventData = (IARM_Bus_tr69HostIfMgr_EventData_t *)data;
+    ParamNotify *paramNotify = NULL;
+    int isNotificationEnabled = 0;
 
-	if (0 == strcmp(owner, IARM_BUS_TR69HOSTIFMGR_NAME))
-	{
-		switch (eventId)
-		{
-		case IARM_BUS_TR69HOSTIFMGR_EVENT_ADD:
-			if(tr69EventData->paramName)
-			{
-				paramNotify->paramName = tr69EventData->paramName;
-			}
-			if(tr69EventData->paramValue)
-			{
-				paramNotify->newValue = tr69EventData->paramValue;
-			}
-			//paramNotify->oldValue= val->oldValue;
-			converttoWalType(tr69EventData->paramtype,&(paramNotify->type));
-			break;
-		case IARM_BUS_TR69HOSTIFMGR_EVENT_REMOVE:
-			if(tr69EventData->paramName)
-			{
-				paramNotify->paramName = tr69EventData->paramName;
-			}
-			if(tr69EventData->paramValue)
-			{
-				paramNotify->newValue = tr69EventData->paramValue;
-			}
-			//paramNotify->oldValue= val->oldValue;
-			converttoWalType(tr69EventData->paramtype,&(paramNotify->type));
-			break;
-		case IARM_BUS_TR69HOSTIFMGR_EVENT_VALUECHANGED:
-			if(tr69EventData->paramName)
-			{
-				paramNotify->paramName = tr69EventData->paramName;
-			}
-			if(tr69EventData->paramValue)
-			{
-				paramNotify->newValue = tr69EventData->paramValue;
-			}
-			converttoWalType(tr69EventData->paramtype,&(paramNotify->type));
-//    	paramNotify->changeSource = mapWriteID(val->writeID);
-			break;
-		default:
-			break;
+    if (0 == strcmp(owner, IARM_BUS_TR69HOSTIFMGR_NAME))
+    {
+        switch (eventId)
+        {
+        /*case IARM_BUS_TR69HOSTIFMGR_EVENT_ADD:
+            if(tr69EventData->paramName)  // Ignoring Add events Since it is not relevant for now.
+            {
+                paramNotify->paramName = tr69EventData->paramName;
+            }
+            if(tr69EventData->paramValue)
+            {
+                paramNotify->newValue = tr69EventData->paramValue;
+            }
+            //paramNotify->oldValue= val->oldValue;
+            converttoWalType(tr69EventData->paramtype,&(paramNotify->type));
+            break;*/
+	/*case IARM_BUS_TR69HOSTIFMGR_EVENT_REMOVE:
+            if(tr69EventData->paramName) // Ignoring Add events Since it is not Relevant for now.
+            {
+                paramNotify->paramName = tr69EventData->paramName;
+            }
+            if(tr69EventData->paramValue)
+            {
+                paramNotify->newValue = tr69EventData->paramValue;
+            }
+            //paramNotify->oldValue= val->oldValue;
+            converttoWalType(tr69EventData->paramtype,&(paramNotify->type));
+            break;*/
+        case IARM_BUS_TR69HOSTIFMGR_EVENT_VALUECHANGED:
+            isNotificationEnabled = getNotificationValue(tr69EventData->paramName);
+            if(isNotificationEnabled)
+            {
+                paramNotify = (ParamNotify *) malloc(sizeof(ParamNotify));
+        	memset(paramNotify,0,sizeof(ParamNotify));
+                if(tr69EventData->paramName)
+                {
+		    paramNotify->paramName = tr69EventData->paramName;
 		}
-	}
-	RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"Notification Event from stack: Parameter Name: %s, Old Value: %s, New Value: %s, Data Type: %d, Write ID: %d\n", paramNotify->paramName, paramNotify->oldValue, paramNotify->newValue, paramNotify->type, paramNotify->changeSource);
-
-	if(notifyCbFn != NULL)
-	{
-		NotifyData *notifyDataPtr = (NotifyData *) malloc(sizeof(NotifyData) * 1);
-		notifyDataPtr->type = PARAM_NOTIFY;
-		Notify_Data *notify_data = (Notify_Data *) malloc(sizeof(Notify_Data) * 1);
-		notify_data->notify = paramNotify;
-		notifyDataPtr->data = notify_data;
-		RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"Notification forwarded for Parameter Name (%s) with Value (%s) and Data type (%d).\n",
-					paramNotify->paramName,  paramNotify->newValue, paramNotify->type);
-		(*notifyCbFn)(notifyDataPtr);
-	}
+		if(tr69EventData->paramValue)
+		{
+		    paramNotify->newValue = tr69EventData->paramValue;
+		}
+		converttoWalType(tr69EventData->paramtype,&(paramNotify->type));
+		//paramNotify->changeSource = mapWriteID(val->writeID);
+       	   }
+            break;
+        default:
+            break;
+        }
+    }
+    
+    if((notifyCbFn != NULL) && isNotificationEnabled && (eventId == IARM_BUS_TR69HOSTIFMGR_EVENT_VALUECHANGED))
+    {
+        NotifyData *notifyDataPtr = (NotifyData *) malloc(sizeof(NotifyData) * 1);
+        if(NULL == notifyDataPtr)
+        {
+            if(paramNotify) WAL_FREE(paramNotify);
+        }
+        else
+        {
+            notifyDataPtr->type = NOTIFY_PARAM_VALUE_CHANGE;
+            Notify_Data *notify_data = (Notify_Data *) malloc(sizeof(Notify_Data) * 1);
+            if(NULL != notify_data)
+            {
+                notify_data->notify = paramNotify;
+                notifyDataPtr->data = notify_data;
+                RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"Notification forwarded for Parameter Name (%s) with Value (%s) and Data type (%d).\n",
+                        paramNotify->paramName,  paramNotify->newValue, paramNotify->type);
+                (*notifyCbFn)(notifyDataPtr);
+            }
+            else
+            {
+                if(paramNotify) WAL_FREE(paramNotify);
+            }
+        }
+    }
 }
-
 /**
  * @brief Initializes the Message Bus and registers WebPA component with the stack.
  *
