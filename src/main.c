@@ -80,7 +80,10 @@ int main(int argc,char *argv[])
 	retVal = GetFeatureEnabled(". /lib/rdk/isFeatureEnabled.sh WEBPAXG");
 	RDK_LOG(RDK_LOG_INFO, LOG_MOD_WEBPA,"[%s] WEBPAXG returns %d\n", __FUNCTION__, retVal);
 	if( retVal == 0)
+        {
+            system("systemctl stop webpavideo.service");
 	    return 1;
+        }
 #endif
 
 	signal(SIGTERM, sig_handler);
