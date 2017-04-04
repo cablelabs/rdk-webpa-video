@@ -10,6 +10,7 @@
 #include "wal.h"
 #include "websocket_mgr.h"
 #include "rdk_debug.h"
+#include "wal_internal.h"
 
 #ifdef WEBPA_RFC_ENABLED
 #define RFC_BUFFER_SIZE 	256
@@ -59,14 +60,20 @@ int GetFeatureEnabled(char *cmd)
 int main(int argc,char *argv[])
 {
 	const char* debugConfigFile = NULL;
+	const char* nofityConfigFile = NULL;
+	int itr=0;
 #ifdef WEBPA_RFC_ENABLED
 	int retVal = 0;
 #endif
 
-	if(argc>1)
-        if(strcmp(argv[1],"--debugconfig")==0)
+    while (itr < argc)
+    {
+        if(strcmp(argv[itr],"--debugconfig")==0)
         {
-            debugConfigFile = argv[2];
+            itr++;
+            if (itr < argc)
+            {
+                debugConfigFile = argv[itr];
 
 #ifdef RDK_LOGGER_ENABLED
     	   if(rdk_logger_init(debugConfigFile) == 0) b_rdk_logger_enabled = 1;
@@ -74,16 +81,36 @@ int main(int argc,char *argv[])
 #else
            rdk_logger_init(debugConfigFile);
 #endif
+            }
+            else
+            {
+                break;
+            }
         }
+        if(strcmp(argv[itr],"--notifyconfig")==0)
+        {
+            itr++;
+            if (itr < argc)
+            {
+            	nofityConfigFile = argv[itr];
+                RDK_LOG(RDK_LOG_INFO, LOG_MOD_WEBPA,"Setting Notification file %s\n",nofityConfigFile);
+            }
+            else
+            {
+                break;
+            }
+        }
+        itr++;
+    }
 
 #ifdef WEBPA_RFC_ENABLED
 	retVal = GetFeatureEnabled(". /lib/rdk/isFeatureEnabled.sh WEBPAXG");
 	RDK_LOG(RDK_LOG_INFO, LOG_MOD_WEBPA,"[%s] WEBPAXG returns %d\n", __FUNCTION__, retVal);
 	if( retVal == 0)
-        {
-            system("systemctl stop webpavideo.service");
+	{
+	    system("systemctl stop webpavideo.service");
 	    return 1;
-        }
+	}
 #endif
 
 	signal(SIGTERM, sig_handler);
@@ -100,6 +127,7 @@ int main(int argc,char *argv[])
 	signal(SIGALRM, sig_handler);
 
 	msgBusInit("webpa");
+	setNotifyConfigurationFile(nofityConfigFile);
 	createSocketConnection();
 	while(1)
         {

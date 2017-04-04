@@ -4,7 +4,7 @@ After=tr69hostif.service
 
 [Service]
 EnvironmentFile=/etc/device.properties
-ExecStart=/bin/sh -c 'source /lib/rdk/opt-override.sh;/usr/bin/webpavideo --debugconfig $DEBUGINIFILE'
+ExecStart=/bin/sh -c 'source /lib/rdk/opt-override.sh;/usr/bin/webpavideo --debugconfig $DEBUGINIFILE --notifyconfig $WEBPANOTIFYINCFG'
 ExecStop=/bin/kill -15 $MAINPID
 RestartSec=10s
 Restart=always

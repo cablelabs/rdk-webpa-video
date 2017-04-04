@@ -11,6 +11,7 @@ typedef unsigned int bool;
 #include <unistd.h>
 #include "rdk_debug.h"
 
+#include "wal_internal.h"
 #define MAX_NUM_PARAMETERS 2048
 #define MAX_DATATYPE_LENGTH 48
 #define MAX_PARAMETER_LENGTH 512
@@ -32,7 +33,6 @@ typedef unsigned int bool;
 #define RDKV_DEVICE_UP_TIME                  "Device.DeviceInfo.UpTime"
 #define STR_NOT_DEFINED                      "not.defined"
 #define LOG_MOD_WEBPA                        "LOG.RDK.WEBPAVIDEO"
-#define WEBPA_NOTIFYCFG_FILE                 "/etc/notify_webpa_cfg.json"
 
 static int get_ParamValues_tr69hostIf(HOSTIF_MsgData_t *param);
 static int GetParamInfo (const char *pParameterName, ParamVal **parametervalPtrPtr, int *paramCountPtr);
@@ -51,6 +51,7 @@ static int g_dbhandle = 0;
 void (*notifyCbFn)(NotifyData*) = NULL;
 char **g_notifyParamList = NULL;
 unsigned int g_notifyListSize = 0;
+const char* webpaNotifyConfigFile = NULL;
 
 static void converttohostIfType(char *ParamDataType,HostIf_ParamType_t* pParamType)
 {
@@ -97,43 +98,87 @@ static void converttoWalType(HostIf_ParamType_t paramType,DATA_TYPE* pwalType)
 		break;
 	}
 }
-int getnotifyparamList(const char *cfgFileName,char ***notifyParamList,unsigned int *ptrnotifyListSize)
+
+/**
+ * @brief Initializes WebPA configuration file
+ *
+ * @return void.
+ */
+void setNotifyConfigurationFile(const char* nofityConfigFile)
 {
-        char *temp_ptr = NULL;
-        char *notifycfg_file_content = NULL;
-        int i = 0;
-        int ch_count = 0;
+    if(NULL != nofityConfigFile)
+    {
+	webpaNotifyConfigFile = nofityConfigFile;
+	RDK_LOG(RDK_LOG_INFO,LOG_MOD_WEBPA,"Notify Configuration file set %s \n",webpaNotifyConfigFile);
+    }
+    else
+    {
+        RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Unable to set Notify Configuration file\n");
+    }
+}
 
-        FILE *fp = NULL;
+int getnotifyparamList(char ***notifyParamList,int *ptrnotifyListSize)
+{
+	char *temp_ptr = NULL;
+	char *notifycfg_file_content = NULL;
+	int i = 0;
+	int ch_count = 0;
+	FILE *fp = NULL;
 
-        fp = fopen(cfgFileName, "r");
-        if (fp == NULL)
-        {
-                RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Failed to open cfg file %s\n", WEBPA_NOTIFYCFG_FILE);
-                return -1;
-        }
-        fseek(fp, 0, SEEK_END);
-        ch_count = ftell(fp);
-        fseek(fp, 0, SEEK_SET);
-        notifycfg_file_content = (char *) malloc(sizeof(char) * (ch_count + 1));
-        fread(notifycfg_file_content, 1, ch_count,fp);
-        notifycfg_file_content[ch_count] ='\0';
-        fclose(fp);
-
-        cJSON *notify_cfg = cJSON_Parse(notifycfg_file_content);
-        cJSON *notifyArray = cJSON_GetObjectItem(notify_cfg,"Notify");
-
-        *ptrnotifyListSize = cJSON_GetArraySize(notifyArray);
-        *notifyParamList = (char **)malloc(sizeof(char *) * *ptrnotifyListSize);
-        for (i = 0 ; i < cJSON_GetArraySize(notifyArray) ; i++)
-        {
-                temp_ptr = cJSON_GetArrayItem(notifyArray, i)->valuestring;
-                if(temp_ptr)
-                {
-                        (*notifyParamList)[i] = (char *)malloc(sizeof(char ) * (strlen(temp_ptr)+1));
-                        strcpy((*notifyParamList)[i],temp_ptr);
-                }
-        }
+	// Read file notification Configuration file
+	if(NULL == webpaNotifyConfigFile)
+	{
+		RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"WebPA notification file path not set");
+		return -1;
+	}
+	RDK_LOG(RDK_LOG_INFO,LOG_MOD_WEBPA,"Inside getnotifyparamList trying to open %s\n", webpaNotifyConfigFile);
+	fp = fopen(webpaNotifyConfigFile, "r");
+	if (fp == NULL)
+	{
+		RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Failed to open cfg file %s\n", webpaNotifyConfigFile);
+		return -1;
+	}
+	fseek(fp, 0, SEEK_END);
+	ch_count = ftell(fp);
+	fseek(fp, 0, SEEK_SET);
+	notifycfg_file_content = (char *) malloc(sizeof(char) * (ch_count + 1));
+	fread(notifycfg_file_content, 1, ch_count,fp);
+	notifycfg_file_content[ch_count] ='\0';
+	fclose(fp);
+	if(ch_count < 1)
+	{
+		RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"WebPA notification file is Empty %s\n", webpaNotifyConfigFile);
+		return -1;
+	}
+	cJSON *notify_cfg = cJSON_Parse(notifycfg_file_content);
+	cJSON *notifyArray = cJSON_GetObjectItem(notify_cfg,"Notify");
+	if(NULL != notifyArray)
+	{
+	    *ptrnotifyListSize =(int)cJSON_GetArraySize(notifyArray);
+	    //RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"Number of Notify Params = %d\n", *ptrnotifyListSize);
+	    *notifyParamList = (char **)malloc(sizeof(char *) * *ptrnotifyListSize);
+	    for (i = 0 ; i < cJSON_GetArraySize(notifyArray) ; i++)
+	    {
+		temp_ptr = cJSON_GetArrayItem(notifyArray, i)->valuestring;
+		if(temp_ptr)
+		{
+		    (*notifyParamList)[i] = (char *)malloc(sizeof(char ) * (strlen(temp_ptr)+1));
+		    strcpy((*notifyParamList)[i],temp_ptr);
+		    RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"Notify Param  = %s\n", temp_ptr);
+		}
+	    }
+	    // Update local Parameter list from generic layer
+	    if(NULL != notifyParamList && NULL != ptrnotifyListSize)
+	    {
+		g_notifyParamList = *notifyParamList;
+		g_notifyListSize = *ptrnotifyListSize;
+		RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Notification Param list if NULL");
+	    }
+	}
+	else
+	{
+	    RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Unable to parse Configuration file");
+	}
 }
 
 /**
@@ -185,7 +230,7 @@ static int getNotificationValue(const char *pParameterName)
     {
         if((NULL != pParameterName) && (!strcmp(pParameterName,g_notifyParamList[count])))
         {
-        	found = 1;
+            found = 1;
             break;
         }
     }
@@ -247,7 +292,7 @@ static void  _tr69Event_handler(const char *owner, IARM_Bus_tr69HostIfMgr_EventI
             break;
         }
     }
-    
+
     if((notifyCbFn != NULL) && isNotificationEnabled && (eventId == IARM_BUS_TR69HOSTIFMGR_EVENT_VALUECHANGED))
     {
         NotifyData *notifyDataPtr = (NotifyData *) malloc(sizeof(NotifyData) * 1);
@@ -263,7 +308,7 @@ static void  _tr69Event_handler(const char *owner, IARM_Bus_tr69HostIfMgr_EventI
             {
                 notify_data->notify = paramNotify;
                 notifyDataPtr->data = notify_data;
-                RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"Notification forwarded for Parameter Name (%s) with Value (%s) and Data type (%d).\n",
+                RDK_LOG(RDK_LOG_INFO,LOG_MOD_WEBPA,"Notification forwarded for Parameter Name (%s) with Value (%s) and Data type (%d).\n",
                         paramNotify->paramName,  paramNotify->newValue, paramNotify->type);
                 (*notifyCbFn)(notifyDataPtr);
             }
@@ -314,40 +359,6 @@ WAL_STATUS msgBusInit(const char *name)
 		RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error loading database\n");
 		return WAL_FAILURE;
 	}
-	//Read notify configuration file and populate notifylist
-	getnotifyparamList(WEBPA_NOTIFYCFG_FILE,&g_notifyParamList,&g_notifyListSize);
-
-	//Set Notify attributes for the parameters in the list
-	int i = 0;
-	char notif[20] = "";
-	money_trace_spans *wildcardSpan = NULL;
-	WAL_STATUS *walret = NULL;
-	AttrVal **attArr = NULL;
-	walret = (WAL_STATUS *) malloc(sizeof(WAL_STATUS) * 1);
-	attArr = (AttrVal **) malloc(sizeof(AttrVal *) * 1);
-	for(i=0; i < g_notifyListSize;i++)
-	{
-		attArr[0] = (AttrVal *) malloc(sizeof(AttrVal) * 1);
-		snprintf(notif, sizeof(notif), "%d", 1);
-		attArr[0]->value = (char *) malloc(sizeof(char) * 20);
-		strcpy(attArr[0]->value, notif);
-		attArr[0]->name= (char *) g_notifyParamList[i];
-		attArr[0]->type = WAL_INT;
-		setAttributes((const char **)&g_notifyParamList[i], 1, wildcardSpan, (const AttrVal **) attArr, walret);
-
-		if(walret[0] != WAL_SUCCESS)
-		{
-			RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Failed to turn notification ON for parameter : %s walret: %d \n", g_notifyParamList[i], walret[0]);
-		}
-		else
-		{
-			RDK_LOG(RDK_LOG_INFO,LOG_MOD_WEBPA,"Successfully set notification ON for parameter : %s walret: %d\n",g_notifyParamList[i], walret[0]);
-		}
-		WAL_FREE(attArr[0]->value);
-		WAL_FREE(attArr[0]);
-     }
-        WAL_FREE(walret);
-        WAL_FREE(attArr);
 }
 
 /**
@@ -636,7 +647,7 @@ static int set_ParamValues_tr69hostIf (HOSTIF_MsgData_t param)
 	}
 	else
 	{
-		RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"[%s:%s:%d] Set Successful for value : %s\n", __FILE__, __FUNCTION__, __LINE__, (char *)param.paramValue);
+	    RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"[%s:%s:%d] Set Successful for value : %s\n", __FILE__, __FUNCTION__, __LINE__, (char *)param.paramValue);
 	}
 	return WAL_SUCCESS;
 }
@@ -815,6 +826,7 @@ static int getParamAttributes(const char *pParameterName, AttrVal ***attr, int *
 void setAttributes(const char *paramName[], const unsigned int paramCount, money_trace_spans *timeSpan, const AttrVal *attr[], WAL_STATUS *retStatus)
 //void setAttributes(const char *paramName[], int paramCount, const AttrVal *attr[], WAL_STATUS *retStatus)
 {
+	RDK_LOG(RDK_LOG_INFO,LOG_MOD_WEBPA,"[%s:%s:%d] Inside setAttributes, Param Count = %d\n", __FILE__, __FUNCTION__, __LINE__,paramCount);
 	int cnt=0;
 	for(cnt=0; cnt<paramCount; cnt++)
 	{
@@ -826,20 +838,23 @@ void setAttributes(const char *paramName[], const unsigned int paramCount, money
 **/
 static int set_AttribValues_tr69hostIf (HOSTIF_MsgData_t param)
 {
-RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"[%s:%s:%d] BEFORE IARM BUS CALL\n", __FILE__, __FUNCTION__, __LINE__);
+    	RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"[%s:%s:%d] BEFORE IARM BUS CALL\n", __FILE__, __FUNCTION__, __LINE__);
 	IARM_Result_t ret = IARM_RESULT_IPCCORE_FAIL;
 	param.reqType = HOSTIF_SETATTRIB;
+
+	// Try to set value
 	ret = IARM_Bus_Call(IARM_BUS_TR69HOSTIFMGR_NAME,
 						IARM_BUS_TR69HOSTIFMGR_API_SetAttributes,
 						(void *)&param,
 						sizeof(param));
-	if(ret != IARM_RESULT_SUCCESS) {
-			RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"[%s:%s:%d] Failed in IARM_Bus_Call(), with return value: %d\n", __FILE__, __FUNCTION__, __LINE__, ret);
-			return WAL_ERR_INVALID_PARAMETER_NAME;
+	if(ret != IARM_RESULT_SUCCESS)
+	{
+		RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"[%s:%s:%d] Failed in IARM_Bus_Call(), with return value: %d\n", __FILE__, __FUNCTION__, __LINE__, ret);
+		return WAL_ERR_INVALID_PARAMETER_NAME;
 	}
 	else
 	{
-			RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"[%s:%s:%d] Set Successful for value : %s\n", __FILE__, __FUNCTION__, __LINE__, (char *)param.paramValue);
+		RDK_LOG(RDK_LOG_INFO,LOG_MOD_WEBPA,"[%s:%s:%d] Set Successful for value : %s\n", __FILE__, __FUNCTION__, __LINE__, (char *)param.paramValue);
 	}
 	return WAL_SUCCESS;
 }
@@ -850,7 +865,6 @@ static int setParamAttributes(const char *pParameterName, const AttrVal *attArr)
     int i = 0;
     HOSTIF_MsgData_t Param = {0};
     memset(&Param, '\0', sizeof(HOSTIF_MsgData_t));
-
     // Enable only for notification parameters in the config file
     int found = 0;
     for(i = 0; i < g_notifyListSize; i++)
@@ -858,6 +872,7 @@ static int setParamAttributes(const char *pParameterName, const AttrVal *attArr)
             if(!strcmp(pParameterName,g_notifyParamList[i]))
             {
                     found = 1;
+                    RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"[%s:%s:%d] Inside setParamAttributes, Param Found in Glist \n", __FILE__, __FUNCTION__, __LINE__,pParameterName);
                     break;
             }
     }
@@ -877,7 +892,7 @@ static int setParamAttributes(const char *pParameterName, const AttrVal *attArr)
  * @brief _WEBPA_LOG WEBPA RDK Logger API
  *
  * @param[in] level LOG Level
- * @param[in] msg Message to be logged 
+ * @param[in] msg Message to be logged
  */
 void _WEBPA_LOG(unsigned int level, const char *msg, ...)
 {
@@ -953,7 +968,7 @@ char *getInterfaceNameFromConfig()
 const char* getWebPAConfig(WCFG_PARAM_NAME param)
 {
 	const char *ret = NULL;
-	
+
 	switch(param)
 	{
 		case WCFG_COMPONENT_NAME:
@@ -1012,12 +1027,12 @@ const char* getWebPAConfig(WCFG_PARAM_NAME param)
 		default:
 			ret = STR_NOT_DEFINED;
 	}
-	
+
 	return ret;
 }
 
 /**
- * @brief sendIoTMessage interface sends message to IoT. 
+ * @brief sendIoTMessage interface sends message to IoT.
  *
  * @param[in] msg Message to be sent to IoT.
  * @return WAL_STATUS
@@ -1060,8 +1075,8 @@ void waitForOperationalReadyCondition()
 void getNotifyParamList(const char ***paramList,int *size)
 {
 
-     RDK_LOG(RDK_LOG_DEBUG,LOG_MOD_WEBPA,"[%s:%s:%d] TODO:- getNotifyParamList() ", __FILE__, __FUNCTION__, __LINE__);
-	//getnotifyparamList(WEBPA_NOTIFYCFG_FILE,paramList,&size);
+    RDK_LOG(RDK_LOG_INFO,LOG_MOD_WEBPA,"[%s:%s:%d] Initializing Notification parameters\n", __FILE__, __FUNCTION__, __LINE__);
+    getnotifyparamList(paramList,size);
 }
 
 /* int main ( int arc, char **argv )
