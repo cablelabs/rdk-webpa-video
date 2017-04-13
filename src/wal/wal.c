@@ -198,23 +198,111 @@ void getValues (const char *paramName[], const unsigned int paramCount, money_tr
         int *retValCount, WAL_STATUS *retStatus)
 {
     // Generic code mallocs paramValArr to hold paramCount items but only paramValArr[0] is ever accessed.
-
     // Generic code uses "paramValArr[0][cnt2]" (iterating over the 2nd dimension instead of the 1st). This means
     // paramValArr[0] (which is of type "ParamVal**") is expected to point to an array of "ParamVal*" objects
-    paramValArr[0] = calloc (paramCount, sizeof(ParamVal*));
 
+    ParamVal ***tmpParamValArr = (ParamVal ***) malloc( sizeof(ParamVal **) * paramCount);
+    tmpParamValArr[0] = calloc (paramCount, sizeof(ParamVal*));
+    if(NULL == tmpParamValArr[0])
+    {
+        RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Eroor while creating memory \n");
+        return;
+    }
     int cnt = 0;
+    int cnt1 = 0;
     int numParams = 0;
+    int totalParams = 0;
     for (cnt = 0; cnt < paramCount; cnt++)
     {
         // Because GetParamInfo is responsible for producing results (including wildcard explansion) for only 1 input
         // parameter, the address of the correct "ParamVal*" object from the above allocated array has to be given to
         // GetParamInfo for initialization. So GetParamInfo has to take a "ParamVal**" as input.
-        retStatus[cnt] = GetParamInfo (paramName[cnt], &paramValArr[0][cnt], &numParams);
+        retStatus[cnt] = GetParamInfo (paramName[cnt], &tmpParamValArr[0][cnt], &numParams);
         retValCount[cnt] = numParams;
-    }
-}
 
+        // Get Total parameter count
+        totalParams = totalParams + numParams;
+    }
+    paramValArr[0] = calloc (totalParams, sizeof(ParamVal*));
+
+    // If wildcard request then fill the tripple pointer as double pointer to provide inter operability with Generic layer
+    int paramIndex = 0;
+    for (cnt = 0; cnt < paramCount; cnt++)
+    {
+        if(retStatus[cnt] == WAL_SUCCESS)
+        {
+            if(isWildCardParam(paramName[cnt])) // Parameter is wild Card
+            {
+                RDK_LOG(RDK_LOG_INFO,LOG_MOD_WEBPA,"Wild Card parameter found \n");
+                for(cnt1 = 0; cnt1<retValCount[cnt]; cnt1++)
+                {
+                    ParamVal* parametervalPtr = NULL;
+                    parametervalPtr = (ParamVal*) calloc (1, sizeof(ParamVal));
+                    if(NULL != parametervalPtr)
+                    {
+                        parametervalPtr->name = (char*) calloc (MAX_PARAM_LENGTH, sizeof(char));
+                        parametervalPtr->value = (char*) calloc (MAX_PARAM_LENGTH, sizeof(char));
+                        if(NULL != parametervalPtr->name && NULL != parametervalPtr->value)
+                        {
+                            // Fill the data for sending
+                            strncat (parametervalPtr->name,tmpParamValArr[0][cnt][cnt1].name , MAX_PARAM_LENGTH - 1);
+                            strncat (parametervalPtr->value, tmpParamValArr[0][cnt][cnt1].value, MAX_PARAM_LENGTH - 1);
+                            parametervalPtr->type = tmpParamValArr[0][cnt][cnt1].type;
+                            paramValArr[0][paramIndex] = parametervalPtr;
+                            paramIndex++;
+
+                            // Free All temporary used memory
+                            WAL_FREE(tmpParamValArr[0][cnt][cnt1].name);
+                            WAL_FREE(tmpParamValArr[0][cnt][cnt1].value);
+                        }
+                        else
+                        {
+                            RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Eroor while creating memory \n");
+                        }
+                    }
+                    else
+                    {
+                        RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Eroor while creating memory \n");
+                    }
+                }
+            }
+            else // Parametr is not a wild card
+            {
+                ParamVal* parametervalPtr = NULL;
+                parametervalPtr = (ParamVal*) calloc (1, sizeof(ParamVal));
+                if(NULL != parametervalPtr)
+                {
+                    parametervalPtr->name = (char*) calloc (MAX_PARAM_LENGTH, sizeof(char));
+                    parametervalPtr->value = (char*) calloc (MAX_PARAM_LENGTH, sizeof(char));
+                    if(NULL != parametervalPtr->name && NULL != parametervalPtr->value)
+                    {
+                        // Fill the data for sending
+                        strncat (parametervalPtr->name,tmpParamValArr[0][cnt]->name , MAX_PARAM_LENGTH - 1);
+                        strncat (parametervalPtr->value, tmpParamValArr[0][cnt]->value, MAX_PARAM_LENGTH - 1);
+                        parametervalPtr->type = tmpParamValArr[0][cnt]->type;
+                        paramValArr[0][paramIndex] = parametervalPtr;
+                        paramIndex++;
+
+                        // Free Memory
+                        WAL_FREE(tmpParamValArr[0][cnt]->name);
+                        WAL_FREE(tmpParamValArr[0][cnt]->value);
+                        WAL_FREE(tmpParamValArr[0][cnt]);
+                    }
+                    else
+                    {
+                        RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Eroor while creating memory \n");
+                    }
+                }
+                else
+                {
+                    RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Eroor while creating memory \n");
+                }
+            }
+        }
+    }
+    // Free temporary Memory
+    WAL_FREE(tmpParamValArr[0]);
+}
 /**
  * @brief Check if Parameter Name present in Notification list or not
  *
@@ -359,6 +447,8 @@ WAL_STATUS msgBusInit(const char *name)
 		RDK_LOG(RDK_LOG_ERROR,LOG_MOD_WEBPA,"Error loading database\n");
 		return WAL_FAILURE;
 	}
+	// Initialize Number of entity param list
+        initNumEntityParamList();
 }
 
 /**
@@ -392,11 +482,27 @@ static int get_ParamValues_tr69hostIf(HOSTIF_MsgData_t *ptrParam)
 	}
 	return WAL_SUCCESS;
 }
-
+/**
+ * @brief Check if Parameter Name ends with . If yes it is a wild card param
+ *
+ * @param[in] paramName Name of the Parameter.
+ * @param[out] retValue 0 if present and 1 if not
+ */
+int isWildCardParam(char *paramName)
+{
+    int isWildCard = 0;
+    if(NULL != paramName)
+    {
+	if(!strcmp(paramName+strlen(paramName)-1,"."))
+	{
+	    isWildCard = 1;
+	}
+    }
+    return isWildCard;
+}
 static int GetParamInfo (const char *pParameterName, ParamVal **parametervalPtrPtr, int *paramCountPtr)
 {
     //Check if pParameterName is in the tree and convert to a list if a wildcard/branch
-    const char wcard = '*'; // TODO: Currently support only wildcard character *
     int i = 0;
     int ret = WAL_FAILURE;
     DB_STATUS dbRet = DB_FAILURE;
@@ -423,7 +529,7 @@ static int GetParamInfo (const char *pParameterName, ParamVal **parametervalPtrP
     {
         ParamVal* parametervalPtr = NULL;
 
-        if (strchr (pParameterName, wcard))
+        if (isWildCardParam(pParameterName))
         {
             /* Translate wildcard to list of parameters */
             char **getParamList = (char**) calloc (MAX_NUM_PARAMETERS, sizeof(char*));
@@ -446,10 +552,9 @@ static int GetParamInfo (const char *pParameterName, ParamVal **parametervalPtrP
                 ret = WAL_FAILURE;
                 goto exit0;
             }
-
             for (i = 0; i < *paramCountPtr; i++)
             {
-                RDK_LOG (RDK_LOG_DEBUG, LOG_MOD_WEBPA, "%s:%s\n", getParamList[i], ParamDataTypeList[i]);
+                RDK_LOG (RDK_LOG_DEBUG, LOG_MOD_WEBPA, "WILDCARD :- %s:%s\n", getParamList[i], ParamDataTypeList[i]);
                 strncpy (Param.paramName, getParamList[i], MAX_PARAM_LENGTH - 1);
                 Param.paramName[MAX_PARAM_LENGTH - 1] = '\0';
 
@@ -459,7 +564,6 @@ static int GetParamInfo (const char *pParameterName, ParamVal **parametervalPtrP
 
                 // Convert Param.paramtype to ParamVal.type
                 converttoWalType (Param.paramtype, &(parametervalPtr[i].type));
-
                 ret = get_ParamValues_tr69hostIf (&Param);
                 if (ret == WAL_SUCCESS)
                 {
@@ -472,8 +576,26 @@ static int GetParamInfo (const char *pParameterName, ParamVal **parametervalPtrP
                         goto exit0;
                     }
 
-                    strncat (parametervalPtr[i].name, Param.paramName, MAX_PARAM_LENGTH - 1);
-                    strncat (parametervalPtr[i].value, Param.paramValue, MAX_PARAM_LENGTH - 1);
+                    strncat(parametervalPtr[i].name, Param.paramName, MAX_PARAM_LENGTH - 1);
+                    switch (Param.paramtype)
+                    {
+                    case hostIf_IntegerType:
+                    case hostIf_BooleanType:
+                        snprintf (parametervalPtr[i].value, MAX_PARAM_LENGTH, "%d", *((int *) Param.paramValue));
+                        break;
+                    case hostIf_UnsignedIntType:
+                        snprintf (parametervalPtr[i].value, MAX_PARAM_LENGTH, "%u", *((unsigned int *) Param.paramValue));
+                        break;
+                    case hostIf_UnsignedLongType:
+                        snprintf (parametervalPtr[i].value, MAX_PARAM_LENGTH, "%u", *((unsigned long *) Param.paramValue));
+                        break;
+                    case hostIf_StringType:
+                        strncat (parametervalPtr[i].value, Param.paramValue, MAX_PARAM_LENGTH - 1);
+                        break;
+                    default: // handle as string
+                        strncat (parametervalPtr[i].value, Param.paramValue, MAX_PARAM_LENGTH - 1);
+                        break;
+                    }
                 }
                 else
                 {
@@ -481,6 +603,7 @@ static int GetParamInfo (const char *pParameterName, ParamVal **parametervalPtrP
                 }
                 free (getParamList[i]);
                 free (ParamDataTypeList[i]);
+                memset(&Param, '\0', sizeof(HOSTIF_MsgData_t));
             }
 exit0:
             // For success case generic layer would free up parametervalPtr after consuming data

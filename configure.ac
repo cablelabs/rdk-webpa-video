@@ -42,7 +42,7 @@ AC_PROG_CC
 
 # Checks for header files.
 AC_CHECK_HEADERS([stdlib.h unistd.h])
-#PKG_CHECK_MODULES([GLIB], [glib-2.0 >= 2.24.0])
+PKG_CHECK_MODULES([GLIB], [glib-2.0 >= 2.24.0])
 #PKG_CHECK_MODULES([GTHREAD], [gthread-2.0 >= 2.24.0])
 
 #PKG_CHECK_MODULES([DBUS], [dbus-1])
