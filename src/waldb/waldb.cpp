@@ -21,13 +21,26 @@
 #include "waldb/waldb.h"
 #include "tinyxml.h"
 #include "stdlib.h"
-
+#include "libIBus.h"
+#include "hostIf_tr69ReqHandler.h"
 #define MAX_PARAMETER_LENGTH 512
 #define MAX_DATATYPE_LENGTH 48
 #define MAX_NUM_PARAMETERS 2048
+#define INSTANCE_NUMBER_INDICATOR "{i}."
+#define MAX_PARAM_LENGTH TR69HOSTIFMGR_MAX_PARAM_LEN
+#define BLUETOOTH_DISCOVERED_DEVICE_COUNT_PARAM  "Device.DeviceInfo.X_RDKCENTRAL-COM_xBlueTooth.DiscoveredDeviceCnt"
+#define BLUETOOTH_PAIRED_DEVICE_COUNT_PARAM  "Device.DeviceInfo.X_RDKCENTRAL-COM_xBlueTooth.PairedDeviceCnt"
+#define BLUETOOTH_CONNECTED_DEVICE_COUNT_PARAM   "Device.DeviceInfo.X_RDKCENTRAL-COM_xBlueTooth.ConnectedDeviceCnt"
 
-static void getList(TiXmlNode *pParent,char *paramName,char **ptrParamList,char **pParamDataTypeList,int *paramCount);
+//static void getList(TiXmlNode *pParent,char *paramName,char **ptrParamList,char **pParamDataTypeList,int *paramCount);
+static TiXmlNode* getList(TiXmlNode *pParent,char *paramName,char* currentParam,char **ptrParamList,char **pParamDataTypeList,int *paramCount);
 static void checkforParameterMatch(TiXmlNode *pParent,char *paramName,int *pMatch,char *dataType);
+void appendNextObject(char* currentParam, const char* pAttparam);
+int isParamEndsWithInstance(const char* paramName);
+void replaceWithInstanceNumber(char *paramName, int instanceNumber);
+int checkMatchingParameter(const char* attrValue, char* paramName, int* ret);
+void appendNextObject(char* currentParam, const char* pAttparam);
+int getNumberofInstances(const char* paramName);
 
 /* @brief Loads the data-model xml data
  *
@@ -61,64 +74,370 @@ DB_STATUS loaddb(const char *filename,void *dbhandle)
 	}
 }
 
-static void getList(TiXmlNode *pParent,char *paramName,char **ptrParamList,char **pParamDataTypeList,int *paramCount)
+/* @brief Loads the Parameter count query string to memory
+ *
+ * @return void
+ */
+void initNumEntityParamList()
 {
-	static int matched = 0;
-	if(!pParent)
-	{
-		matched = 0;
-		return;
-	}
+    instanceNumParamHash = g_hash_table_new(g_str_hash, g_str_equal);
+    if(NULL != instanceNumParamHash)
+    {
+        g_hash_table_insert(instanceNumParamHash, (gpointer)"Device.DeviceInfo.X_RDKCENTRAL-COM_xBlueTooth.DiscoveredDevice", (gpointer)BLUETOOTH_DISCOVERED_DEVICE_COUNT_PARAM);
+        g_hash_table_insert(instanceNumParamHash,(gpointer) "Device.DeviceInfo.X_RDKCENTRAL-COM_xBlueTooth.PairedDevice",(gpointer) BLUETOOTH_PAIRED_DEVICE_COUNT_PARAM);
+        g_hash_table_insert(instanceNumParamHash, (gpointer)"Device.DeviceInfo.X_RDKCENTRAL-COM_xBlueTooth.ConnectedDevice", (gpointer)BLUETOOTH_CONNECTED_DEVICE_COUNT_PARAM);
+    }
+}
 
-	TiXmlNode* pChild;
+/**
+ * @brief Get the number of Instances of particular parameter ending with {i}
+ *
+ * @param[in] paramName Name of the Parameter ending with {i}
+ * @param[out] Number of instances present for particular Parameter
+ */
+int getNumberofInstances(const char* paramName)
+{
+    int instanceCount = 0;
+    if(NULL != paramName)
+    {
+        char *position = NULL;
+        char numberOfEntitiesParam[MAX_PARAMETER_LENGTH] = "\0";
+        char parameter[MAX_PARAMETER_LENGTH] = "\0";
+	strcpy(numberOfEntitiesParam,paramName);
+        if(NULL != (position = strstr(numberOfEntitiesParam, INSTANCE_NUMBER_INDICATOR)))
+        {
+       	    // Check if Parameter is present in numParam Hash List
+	    strncpy(parameter,numberOfEntitiesParam,strlen(numberOfEntitiesParam)-5);
+	    const char* paramValue = (const char *) g_hash_table_lookup(instanceNumParamHash,parameter);
+	    if(NULL != paramValue)
+	    {
+		strcpy(numberOfEntitiesParam,paramValue);
+	    }
+            else // Normal Parameters Number of Entity param = ParamName + "NumberOfEntries"
+            {
+       		strcpy(position-1,"NumberOfEntries");
+            }
+            // Call IARM Bus for getting number of instances
+            HOSTIF_MsgData_t Param = { 0 };
+            memset(&Param, '\0', sizeof(HOSTIF_MsgData_t));
+            strncpy(Param.paramName, numberOfEntitiesParam,strlen(numberOfEntitiesParam));
+            Param.instanceNum = 0;
+            Param.reqType = HOSTIF_GET;
+            Param.paramtype = hostIf_UnsignedIntType;
+            IARM_Result_t ret = IARM_RESULT_IPCCORE_FAIL;
+            ret = IARM_Bus_Call(IARM_BUS_TR69HOSTIFMGR_NAME, IARM_BUS_TR69HOSTIFMGR_API_GetParams, (void *)&Param, sizeof(HOSTIF_MsgData_t));
+	    if(ret == IARM_RESULT_SUCCESS)
+            {
+                unsigned long *count = (unsigned long *)Param.paramValue;
+                instanceCount = (int) (*count);
+            }
+        }
+    }
+    return instanceCount;
+}
+/**
+ * @brief Check if Parameter Name ends with {i}.
+ *
+ * @param[in] paramName Name of the Parameter.
+ * @param[out] retValue 0 if present and 1 if not
+ */
+int isParamEndsWithInstance(const char* paramName)
+{
+    int retValue = 1;
+    if(NULL != paramName)
+    {
+        retValue = strcmp(paramName+strlen(paramName)-4,INSTANCE_NUMBER_INDICATOR);
+    }
+    return retValue;
+}
 
-	static int isObject = 0;
-	static char ObjectName[MAX_PARAMETER_LENGTH];
-	char ParameterName[MAX_PARAMETER_LENGTH];
-	if(pParent->Type() == TiXmlNode::TINYXML_ELEMENT)
-	{
-		TiXmlElement* pElement =  pParent->ToElement();
-		TiXmlAttribute* pAttrib = pElement->FirstAttribute();
-		if(!strcmp(pParent->Value(),"object"))
-		{
-			isObject = 1;
-		}
-		if(pAttrib)
-		{
-			if(strstr(pAttrib->Value(),paramName))
-			{
-				strncpy(ObjectName,pAttrib->Value(),MAX_PARAMETER_LENGTH-1);
-				ObjectName[MAX_PARAMETER_LENGTH-1]='\0';
-				matched = 1;
-			}
-			if(matched || !isObject)
-			{
-				if(!strcmp(pParent->Value(),"parameter"))
-				{
-					isObject = 0;
-					if(*paramCount <= MAX_NUM_PARAMETERS)
-					{
-						ptrParamList[*paramCount] = (char *) malloc(MAX_PARAMETER_LENGTH * sizeof(char));
-						pParamDataTypeList[*paramCount] = (char *) malloc(MAX_DATATYPE_LENGTH * sizeof(char));
+/**
+ * @brief Check if Parameter Name ends with . If yes it is a wild card param
+ *
+ * @param[in] paramName Name of the Parameter.
+ * @param[out] retValue 0 if present and 1 if not
+ */
+int isWildCardParam(char *paramName)
+{
+    int isWildCard = 0;
+    if(NULL != paramName)
+    {
+        if(!strcmp(paramName+strlen(paramName)-1,"."))
+        {
+            isWildCard = 1;
+        }
+    }
+    return isWildCard;
+}
+/**
+ * @brief If Parameter Name ends with {i}. replace it with instance number eg:- a.{i} to a.1
+ *
+ * @param[in] paramName Name of the Parameter.
+ * @param[in] instanceNumber , The number which we need to replace
+ */
+void replaceWithInstanceNumber(char *paramName, int instanceNumber)
+{
+    char *position;
+    char number[10];
 
-						strncpy(ptrParamList[*paramCount],ObjectName,MAX_PARAMETER_LENGTH-1);
-						strncat(ptrParamList[*paramCount],pAttrib->Value(),MAX_PARAMETER_LENGTH-1);
-						ptrParamList[*paramCount][MAX_PARAMETER_LENGTH-1]='\0';
+    if(!(position = strstr(paramName, INSTANCE_NUMBER_INDICATOR)))
+        return;
+    sprintf(number,"%d.",instanceNumber);
+    strcpy(paramName+(strlen(paramName)-4),number);
+}
 
-						strncpy(pParamDataTypeList[*paramCount],pParent->FirstChild()->FirstChild()->Value(),MAX_DATATYPE_LENGTH-1);
-						pParamDataTypeList[*paramCount][MAX_DATATYPE_LENGTH-1]='\0';
-					}
-					*paramCount = *paramCount + 1;
-				}
-			}
-		}
-	}
+/**
+ * @brief Check if the parameter name and current attribute value is matching. This will consider with instance number.
+ * ie "a.b.c.{i}." is matching to "a.b.c.1."
+ *
+ * @param[in] attrValue Current value of the Object with {i} from xml file
+ * @param[in] paramName , Current parameter name from wild card.
+ * @param[in] ret , This will be filled with Instance number if attrValue ends with {i}
+ * @param[out] Status , returns 1 if strings matches and 0 if not
+ */
+int checkMatchingParameter(const char* attrValue, char* paramName, int* ret)
+{
+    int i=10;
+    int inst = 0;
+    int status = 0;
+    while(true)
+    {
+        if(!(*attrValue && *paramName && (*attrValue == *paramName)))
+        {
+            *ret =0;
+            if(*attrValue == '{' && *paramName >= 48 && *paramName<=56)
+            {
+                attrValue += 3;
+                while(*paramName && *paramName != '.')
+                {
+                    *ret = *ret*i + (*paramName-48);
+                    paramName++;
+                    inst = *ret;
+                }
+            }
+            else
+            {
+                *ret =0;
+                if(!*paramName)
+                {
+                    if(!*attrValue && (*(attrValue-2) == '}'))
+                    {
+                        *ret = inst;
+                    }
+                    status = 1;
+                }
+                break;
+            }
+        }
+        attrValue++;
+        paramName++;
+    }
+    return status;
+}
 
-	for ( pChild = pParent->FirstChild(); pChild != 0; pChild = pChild->NextSibling())
-	{
-		getList(pChild,paramName,ptrParamList,pParamDataTypeList,paramCount);
-	}
-	matched = 0;
+/**
+ * @brief Append the next object name with current Object name,
+ *
+ * @param[in] currentParam , Current Name of the Parameter.
+ * @param[in] pAttparam , Current attribute value from xml
+ */
+void appendNextObject(char* currentParam, const char* pAttparam)
+{
+    while(true)
+    {
+        if(!(*currentParam == *pAttparam) )
+        {
+            // Skip instance numbers
+            if(*pAttparam == '{')
+            {
+                if (*currentParam)
+                {
+                    pAttparam += 3;
+                    currentParam = strstr(currentParam, ".");
+                }
+                else
+                    break;
+            }
+            else
+                break;
+        }
+        if(!*currentParam && !*pAttparam ) break;
+
+        currentParam++;
+        pAttparam++;
+    }
+    // Copy rest of the un matching strings to currentParam
+    strcpy(currentParam, pAttparam);
+}
+/**
+ * @brief Get the list of parameters which is matching with paramName
+ *
+ * @param[in] pParent , The current node in tinyxml node
+ * @param[in] paramName , Wildcard parameter name
+ * @param[in] currentParam , current parameter name replaced {i} with instance num
+ */
+static TiXmlNode* getList(TiXmlNode *pParent,char *paramName,char* currentParam,char **ptrParamList,char **pParamDataTypeList,int *paramCount)
+{
+    TiXmlNode* pChild;
+    const char* maxEntries;
+    int isReccursiveCall = 0;
+    char zeroInstance[MAX_PARAMETER_LENGTH] = "\0";
+
+    // If parent is Null Return
+    if(!pParent) {
+        return NULL;
+    }
+    // Identify whether the call is recursive or initial call
+    if(!strcmp(currentParam,""))
+    {
+        isReccursiveCall = 0;
+    }
+    else
+    {
+        isReccursiveCall = 1;
+    }
+
+    // Goto actual Object node ie "Device."
+    if( pParent->Type() != TiXmlNode::TINYXML_ELEMENT )
+    {
+        for ( pChild = pParent->FirstChild(); pChild != 0; )
+        {
+            if( pChild->Type() != TiXmlNode::TINYXML_ELEMENT )
+            {
+                pChild = pChild->NextSibling();
+            }
+            else
+            {
+                if( !strcmp (pChild->Value(), "object") )
+                    break;
+                pChild = pChild->FirstChild();
+            }
+        }
+    }
+    else
+    {
+        pChild = pParent;
+    }
+    // Traverse through the nodes and get matching parameters
+    while(pChild)
+    {
+        TiXmlElement* pElement =  pChild->ToElement();
+        TiXmlAttribute* pAttrib = pElement->FirstAttribute();
+        int inst = 0;
+        int status = 0;
+        char* endPtr = NULL;
+
+        // Check if node is an Object
+        if(!strcmp(pChild->Value(),"object"))
+        {
+            // Check if the Object is matching with given input wild card
+            if(strstr(pAttrib->Value(),paramName) || (status = checkMatchingParameter(pAttrib->Value(),paramName,&inst)))
+            {
+                // If the number of instances are 0 then skip this object and go to next sibling
+                if (*zeroInstance && strstr(pAttrib->Value(),zeroInstance))
+                {
+                    pChild = pChild->NextSibling();
+                    continue;
+                }
+                else if(*zeroInstance)
+                {
+                    zeroInstance[0] = '\0';
+                }
+                // If matching found update the current parameter with wild card input string
+                if( status && !isReccursiveCall) strcpy(currentParam, paramName);
+                // Append if current attribute contains {i} to current param
+                appendNextObject(currentParam, pAttrib->Value());
+                TiXmlNode* bChild,*sChild;
+                bChild = pChild;
+                // Goto the parameters
+                pChild = pChild->FirstChild();
+
+                // Object not having any parameter thus go to next Sibling
+                if(NULL == pChild)
+                {
+                    pChild = bChild->NextSibling();
+                }
+                maxEntries = pElement->Attribute("maxEntries");
+                // Seems like a {i} instance
+                if(maxEntries && ((!strcmp(maxEntries,"unbounded")) || (strtol(maxEntries,&endPtr, 10) > 1)))
+                {
+                    // Make Sure that its ends with {i}
+                    if(isParamEndsWithInstance(pAttrib->Value()) == 0 )
+                    {
+                        int instanceNumber = 0;
+                        int i=1;
+                        // Get the Number of instances for that attribute
+                        int actualInstance = getNumberofInstances(pAttrib->Value());
+                        if(inst)
+                        {
+                            // Check if valid instance count is given in input wild card if not make it as zero, this will skip current branch
+                            if(actualInstance >= inst)
+                                i = instanceNumber = inst;
+                            else
+                                instanceNumber = 0;
+                        }
+                        else
+                        {
+                            instanceNumber = actualInstance;
+                        }
+                        sChild = pChild;
+                        // Number of instances are > 0 go through each and populate data for each instance
+                        char tparaName[MAX_PARAMETER_LENGTH];
+                        while(i<=instanceNumber && inst==0)
+                        {
+                            memset(tparaName, 0,MAX_PARAMETER_LENGTH);
+                            int len=strlen(currentParam)-4;
+                            strcpy(tparaName, pChild->Parent()->ToElement()->FirstAttribute()->Value());
+                            // Replace {i} with current instance number and call recursively
+                            replaceWithInstanceNumber(currentParam,i);
+                            sChild = getList(pChild,tparaName,currentParam,ptrParamList,pParamDataTypeList,paramCount);
+                            strcpy(currentParam+len, INSTANCE_NUMBER_INDICATOR);
+                            i++;
+                        }
+                        pChild = sChild;
+                        // Seems like instance count is empty
+                        if (!instanceNumber)
+                        {   strcpy(zeroInstance, pAttrib->Value());
+                            pChild = pChild->Parent();
+                        }
+                    }
+                }
+            }
+            else if(isReccursiveCall) // Tree found once and processed and going to another branch so break
+            {
+                return pChild;
+            }
+            else // Tree not found yet goto next sibling and get it
+            {
+                pChild = pChild->NextSibling();
+            }
+        }
+        // Found the Parameter
+        else if(!strcmp(pChild->Value(),"parameter"))
+        {
+            TiXmlNode* bChild;
+            // Find all parameters
+            for(bChild = pChild ; pChild ; pChild=pChild->NextSibling() )
+            {
+                if(*paramCount <= MAX_NUM_PARAMETERS)
+                {
+                    ptrParamList[*paramCount] = (char *) malloc(MAX_PARAMETER_LENGTH * sizeof(char));
+                    pParamDataTypeList[*paramCount] = (char *) malloc(MAX_DATATYPE_LENGTH * sizeof(char));
+                    if(strlen(currentParam) > 0)
+                    {
+                        snprintf(ptrParamList[*paramCount],MAX_PARAMETER_LENGTH,"%s%s",currentParam,pChild->ToElement()->FirstAttribute()->Value());
+                        strncpy(pParamDataTypeList[*paramCount],pChild->FirstChild()->FirstChild()->Value(),MAX_DATATYPE_LENGTH-1);
+                    }
+                    (*paramCount)++;
+                }
+            }
+            // Go to next object
+            pChild = bChild->Parent();
+            pChild = pChild->NextSibling();
+        }
+    }
+    return pChild;
+
 }
 /* @brief Returns a parameter list and count given an input paramName with wildcard characters
  *
@@ -131,31 +450,23 @@ static void getList(TiXmlNode *pParent,char *paramName,char **ptrParamList,char 
  */
 DB_STATUS getParameterList(void *dbhandle,char *paramName,char **ParamList,char **ParamDataTypeList,int *paramCount)
 {
-	const char wcard = '*';  //This API currently supports only paramName with * wildcard
-	char parameterName[MAX_PARAMETER_LENGTH];
-	strncpy(parameterName,paramName,MAX_PARAMETER_LENGTH-1);
-	parameterName[MAX_PARAMETER_LENGTH-1]='\0';
-
-	TiXmlDocument *doc = (TiXmlDocument *) dbhandle;
-	if(strchr(parameterName,wcard))
-	{
-		// Remove the wildcard(*) from parameterName to populate list
-		char *ptr = strchr(parameterName,wcard);
-		*ptr = '\0';
-
-		getList(doc,parameterName,ParamList,ParamDataTypeList,paramCount);
-
-		if(*paramCount == 0)
-		{
-			return DB_ERR_INVALID_PARAMETER;
-		}
-	}
-	else
-	{
-		return DB_ERR_WILDCARD_NOT_SUPPORTED;
-	}
-
-	return DB_SUCCESS;
+    char parameterName[MAX_PARAMETER_LENGTH];
+    char currentParam[MAX_PARAMETER_LENGTH] = "\0";
+    strncpy(parameterName,paramName,MAX_PARAMETER_LENGTH-1);
+    TiXmlDocument *doc = (TiXmlDocument *) dbhandle; 
+    if(isWildCardParam(parameterName))
+    {
+        getList(doc,parameterName,currentParam,ParamList,ParamDataTypeList,paramCount);
+        if(*paramCount == 0)
+        {
+            return DB_ERR_INVALID_PARAMETER;
+        }
+    }
+    else
+    {
+        return DB_ERR_WILDCARD_NOT_SUPPORTED;
+    }
+    return DB_SUCCESS;
 }
 
 static void checkforParameterMatch(TiXmlNode *pParent,char *paramName,int *pMatch,char *dataType)
@@ -333,12 +644,10 @@ int isParameterValid(void *dbhandle,char *paramName,char *dataType)
     {
         checkforParameterMatch(doc,paramName,&Match,dataType);
     }
-
 freeResources:
     if (newparamName)
     {
-        free(newparamName);
+	free(newparamName);
     }
-
     return Match;
 }

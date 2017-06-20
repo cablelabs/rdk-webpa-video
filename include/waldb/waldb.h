@@ -21,6 +21,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+#include<glib.h>
 /**
  * @brief Database Error codes.
  */
@@ -34,6 +35,17 @@ typedef enum
 	DB_ERR_NOT_EXIST
 }
 DB_STATUS;
+
+/**
+ * @briefGHashTable For holding Parameter count query strings
+ */
+GHashTable  *instanceNumParamHash = NULL;
+
+/* @brief Loads the Parameter count query string to memory
+ *
+ * @return void
+ */
+void initNumEntityParamList();
 
 /* @brief Loads the data-model xml data
  *
