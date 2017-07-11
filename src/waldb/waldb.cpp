@@ -367,7 +367,7 @@ static TiXmlNode* getList(TiXmlNode *pParent,char *paramName,char* currentParam,
                         int instanceNumber = 0;
                         int i=1;
                         // Get the Number of instances for that attribute
-                        int actualInstance = getNumberofInstances(pAttrib->Value());
+                        int actualInstance = getNumberofInstances(currentParam);
                         if(inst)
                         {
                             // Check if valid instance count is given in input wild card if not make it as zero, this will skip current branch
